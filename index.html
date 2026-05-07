@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ユニフォーム管理システム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&family=Bebas+Neue&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#0D1B2A;--navy-mid:#1B2B3A;--navy-light:#243447;
+  --accent:#F4A228;--red:#E84545;--green:#2ECC71;--blue:#4A9EFF;
+  --text:#E8EDF2;--muted:#8A9BAD;
+  --border:rgba(255,255,255,0.08);--card:rgba(255,255,255,0.04);
+  --card-h:rgba(255,255,255,0.07);--r:12px;--sh:0 8px 32px rgba(0,0,0,0.4);
+}
+body{font-family:'Noto Sans JP',sans-serif;background:var(--navy);color:var(--text);min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--navy)}
+::-webkit-scrollbar-thumb{background:var(--navy-light);border-radius:3px}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.fi{animation:fadeIn .35s ease both}.si{animation:slideIn .3s ease both}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;border:none;
+  font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
+.btn-p{background:var(--accent);color:#000;font-weight:700}
+.btn-p:hover{background:#fbb440;transform:translateY(-1px);box-shadow:0 4px 16px rgba(244,162,40,.4)}
+.btn-g{background:var(--card);color:var(--text);border:1px solid var(--border)}
+.btn-g:hover{background:var(--card-h)}
+.btn-d{background:rgba(232,69,69,.15);color:var(--red);border:1px solid rgba(232,69,69,.3)}
+.btn-d:hover{background:rgba(232,69,69,.25)}
+.sm{padding:5px 12px!important;font-size:12px!important}
+button:disabled{opacity:.4;cursor:not-allowed;transform:none!important;pointer-events:none}
+.inp{width:100%;padding:9px 13px;background:var(--navy-mid);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-family:inherit;font-size:13px;outline:none;transition:border-color .2s}
+.inp:focus{border-color:var(--accent)}.inp::placeholder{color:var(--muted)}
+select.inp{appearance:none;cursor:pointer}
+textarea.inp{resize:vertical}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:100px;font-size:11px;font-weight:600}
+.b-g{background:rgba(46,204,113,.15);color:var(--green)}
+.b-r{background:rgba(232,69,69,.15);color:var(--red)}
+.b-y{background:rgba(244,162,40,.15);color:var(--accent)}
+.b-0{background:rgba(255,255,255,.08);color:var(--muted)}
+.b-b{background:rgba(74,158,255,.15);color:var(--blue)}
+.tw{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--navy-mid);padding:10px 14px;text-align:left;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+td{padding:11px 14px;border-top:1px solid var(--border)}
+tr:hover td{background:var(--card-h)}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.mb{background:var(--navy-mid);border:1px solid var(--border);border-radius:16px;max-width:540px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--sh);animation:fadeIn .22s ease}
+.tabs{display:flex;gap:4px;background:var(--navy-mid);border-radius:10px;padding:4px}
+.tab{flex:1;padding:8px 16px;border-radius:7px;border:none;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;background:transparent;color:var(--muted)}
+.tab.on{background:var(--accent);color:#000;font-weight:700}
+.tab:not(.on):hover{background:var(--card);color:var(--text)}
+.pb{height:6px;background:var(--navy-light);border-radius:3px;overflow:hidden}
+.pf{height:100%;background:var(--accent);border-radius:3px;transition:width .4s ease}
+.cd{font-variant-numeric:tabular-nums}
+.uz{border:2px dashed var(--border);border-radius:var(--r);padding:32px;text-align:center;cursor:pointer;transition:all .2s}
+.uz:hover,.uz.dg{border-color:var(--accent);background:rgba(244,162,40,.05)}
+.sg{display:flex;flex-wrap:wrap;gap:8px}
+.sc{padding:7px 16px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);
+  font-size:13px;font-weight:600;cursor:pointer;transition:all .18s;font-family:inherit;color:var(--text)}
+.sc:hover{border-color:var(--accent);color:var(--accent)}
+.sc.on{border-color:var(--accent);background:rgba(244,162,40,.15);color:var(--accent)}
+.sd{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.sd-d{background:var(--green);color:#000}.sd-a{background:var(--accent);color:#000}.sd-p{background:var(--navy-light);color:var(--muted)}
+.sp{width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+.hidden{display:none!important}
+.ff-label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px;font-weight:600}
+.err-box{color:var(--red);font-size:12px;padding:8px 12px;background:rgba(232,69,69,.08);border-radius:6px;border:1px solid rgba(232,69,69,.2)}
+.divider{height:1px;background:var(--border);margin:4px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media(max-width:640px){
+  .grid2,.grid3{grid-template-columns:1fr!important}
+  .tabs .tab{font-size:11px;padding:7px 8px}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+// ─── Storage (localStorage wrapper) ────────────────────────────────────────────
+const LS = {
+  get(k){ try{ const v=localStorage.getItem(k); return v!=null?JSON.parse(v):null; }catch{return null;} },
+  set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} },
+};
+
+// ─── Utils ─────────────────────────────────────────────────────────────────────
+const genId = () => Math.random().toString(36).slice(2,9);
+const CLS_OPTS = ["A","B","C","D","E","F","G","H","I","J","K","L"];
+const now   = () => new Date();
+const fmtD  = d => d ? new Date(d).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
+const fmtDs = d => d ? new Date(d).toLocaleDateString("ja-JP") : "—";
+const isExp = d => d && new Date(d) < now();
+const hp    = s => btoa(encodeURIComponent(s+"uf2024"));
+
+// ─── Default / Seed data ────────────────────────────────────────────────────────
+const DEF_CFG = { clubName:"○○部", teacherPw:"teacher123", greeting:"" };
+const SEED_ITEMS = [
+  {id:"i1",name:"ゲームシャツ（半袖）",description:"試合用半袖ユニフォーム。チームカラー：紺×白",
+   sizes:["XS","S","M","L","XL","XXL"],deadline:new Date(Date.now()+3*864e5).toISOString(),imageUrl:null,required:true,createdAt:new Date().toISOString()},
+  {id:"i2",name:"プラクティスパンツ",description:"練習用ハーフパンツ。速乾素材",
+   sizes:["S","M","L","XL"],deadline:new Date(Date.now()+7*864e5).toISOString(),imageUrl:null,required:false,createdAt:new Date().toISOString()},
+];
+const SEED_STUDENTS = [
+  {id:"s1",name:"田中 花子",kana:"たなか はなこ",dob:"2008-04-12",gender:"female",grade:"1",cls:"A",number:"01",passwordHash:null,registered:false},
+  {id:"s2",name:"山田 太郎",kana:"やまだ たろう",dob:"2008-07-23",gender:"male",  grade:"1",cls:"A",number:"02",passwordHash:null,registered:false},
+  {id:"s3",name:"佐藤 美咲",kana:"さとう みさき", dob:"2007-01-05",gender:"female",grade:"2",cls:"B",number:"01",passwordHash:null,registered:false},
+  {id:"s4",name:"鈴木 健太",kana:"すずき けんた", dob:"2007-11-18",gender:"male",  grade:"2",cls:"B",number:"02",passwordHash:null,registered:false},
+  {id:"s5",name:"高橋 あおい",kana:"たかはし あおい",dob:"2006-09-30",gender:"other",grade:"3",cls:"C",number:"01",passwordHash:null,registered:false},
+];
+
+// ─── App State ─────────────────────────────────────────────────────────────────
+const S = {
+  cfg:      LS.get("uf_cfg")      ?? DEF_CFG,
+  students: LS.get("uf_students") ?? SEED_STUDENTS,
+  items:    LS.get("uf_items")    ?? SEED_ITEMS,
+  resp:     LS.get("uf_resp")     ?? {},
+  role: null, sid: null,
+};
+const save = () => {
+  LS.set("uf_cfg",      S.cfg);
+  LS.set("uf_students", S.students);
+  LS.set("uf_items",    S.items);
+  LS.set("uf_resp",     S.resp);
+};
+
+// store helpers
+const findStudent = (grade,cls,number) =>
+  S.students.find(s=>s.grade===grade&&s.cls===cls&&String(s.number)===String(number))||null;
+
+const selfRegister = (form, pw) => {
+  const ex = findStudent(form.grade, form.cls, form.number);
+  if(ex){
+    Object.assign(ex, form, {passwordHash:hp(pw), registered:true});
+    save(); return ex.id;
+  } else {
+    const id = genId();
+    S.students.push({...form, id, number:String(form.number), passwordHash:hp(pw), registered:true});
+    save(); return id;
+  }
+};
+
+const getResp     = (iid,sid) => S.resp[`${iid}_${sid}`]||null;
+const getItemResp = (iid)     => {
+  const r={};
+  S.students.forEach(s=>{const x=S.resp[`${iid}_${s.id}`];if(x)r[s.id]=x;});
+  return r;
+};
+
+// ─── Countdown timers registry ──────────────────────────────────────────────────
+const cdTimers = {};
+function startCountdown(el, deadline){
+  if(!el||!deadline) return;
+  const id = el.dataset.cdId || (el.dataset.cdId = genId());
+  if(cdTimers[id]) clearInterval(cdTimers[id]);
+  const tick = () => {
+    const diff = new Date(deadline) - now();
+    if(diff<=0){ el.textContent="締切済"; clearInterval(cdTimers[id]); return; }
+    const d=Math.floor(diff/864e5),h=Math.floor((diff%864e5)/36e5),
+          m=Math.floor((diff%36e5)/6e4),s=Math.floor((diff%6e4)/1e3);
+    el.textContent = d>0?`残り${d}日${h}時間`:`残り${h}時間${m}分${s}秒`;
+  };
+  tick();
+  cdTimers[id] = setInterval(tick, 1000);
+}
+function clearAllCountdowns(){ Object.values(cdTimers).forEach(clearInterval); }
+
+// ─── Render engine ─────────────────────────────────────────────────────────────
+const app = document.getElementById("app");
+function render(fn){ clearAllCountdowns(); app.innerHTML=""; fn(); }
+
+// ─── Helper DOM builders ────────────────────────────────────────────────────────
+function el(tag,props={},children=[]){
+  const e=document.createElement(tag);
+  for(const [k,v] of Object.entries(props)){
+    if(k==="className") e.className=v;
+    else if(k.startsWith("on")&&typeof v==="function") e.addEventListener(k.slice(2).toLowerCase(),v);
+    else if(k==="style"&&typeof v==="object") Object.assign(e.style,v);
+    else if(k==="disabled") e.disabled=!!v;
+    else e.setAttribute(k,v);
+  }
+  for(const c of children){
+    if(c==null||c===false) continue;
+    e.append(typeof c==="string"||typeof c==="number" ? String(c) : c);
+  }
+  return e;
+}
+const div  = (p,c)=>el("div",p,c);
+const btn  = (p,c)=>el("button",p,c);
+const inp  = (p)  =>el("input",p);
+const sel  = (p,c)=>el("select",p,c);
+const opt  = (v,t,s)=>{ const o=el("option",{value:v},[ t]); if(s)o.selected=true; return o; };
+const span = (p,c)=>el("span",p,c);
+const label= (p,c)=>el("label",p,c);
+const ta   = (p,t) =>{ const e=el("textarea",p); e.value=t||""; return e; };
+
+function ff(labelText, child){
+  return div({},[
+    label({className:"ff-label"},[labelText]),
+    child,
+  ]);
+}
+function errBox(msg){ return div({className:"err-box"},[`⚠ ${msg}`]); }
+function badge(cls,text){ return span({className:`badge ${cls}`},[text]); }
+function mhdr(title, onClose){
+  return div({style:{padding:"18px 24px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}},[
+    div({style:{fontWeight:700,fontSize:16}},[title]),
+    btn({className:"btn btn-g sm",onClick:onClose},["✕"]),
+  ]);
+}
+function mftr(onClose, onSave, saveLabel="保存", disabled=false){
+  const saveBtn = btn({className:"btn btn-p",onClick:onSave,disabled},[saveLabel]);
+  return div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:8,justifyContent:"flex-end"}},[
+    btn({className:"btn btn-g",onClick:onClose},["キャンセル"]),
+    saveBtn,
+  ]);
+}
+function thumb(item, size=54, fontSize=22){
+  const wrap = div({style:{width:size+"px",height:size+"px",borderRadius:"8px",background:"var(--navy-light)",flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",fontSize:fontSize+"px"}});
+  if(item.imageUrl){ const img=el("img",{src:item.imageUrl,style:{width:"100%",height:"100%",objectFit:"cover"}}); wrap.append(img); }
+  else wrap.textContent="👕";
+  return wrap;
+}
+function stepBar(steps, current){
+  const row = div({style:{display:"flex",alignItems:"center"}});
+  steps.forEach((label,i)=>{
+    const dot = div({className:`sd ${current>i+1?"sd-d":current===i+1?"sd-a":"sd-p"}`},[current>i+1?"✓":String(i+1)]);
+    const lbl = div({style:{fontSize:10,color:current===i+1?"var(--accent)":"var(--muted)",whiteSpace:"nowrap"}},[label]);
+    const col = div({style:{display:"flex",flexDirection:"column",alignItems:"center",gap:"4px"}},[dot,lbl]);
+    row.append(col);
+    if(i<steps.length-1){
+      const line = div({style:{flex:1,height:"2px",background:current>i+1?"var(--green)":"var(--navy-light)",margin:"0 6px",marginBottom:"16px"}});
+      row.append(line);
+    }
+  });
+  return row;
+}
+function overlay(content, onBgClick){
+  const ov = div({className:"ov"});
+  ov.addEventListener("click",e=>{ if(e.target===ov) onBgClick(); });
+  ov.append(content);
+  document.body.append(ov);
+  return ov;
+}
+function closeOverlay(ov){ ov.remove(); }
+
+function makeSelect(opts, value, onChange, placeholder="—"){
+  const s = sel({className:"inp"}, [opt("",placeholder,!value), ...opts.map(([v,t])=>opt(v,t,v===value))]);
+  s.addEventListener("change",e=>onChange(e.target.value));
+  return s;
+}
+
+// ─── LOGIN SCREEN ───────────────────────────────────────────────────────────────
+function renderLogin(){
+  const name = S.cfg.clubName||"部活";
+  const wrap = div({style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
+
+  const logo = div({style:{marginBottom:"36px",textAlign:"center"}},[
+    div({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"48px",letterSpacing:"4px",color:"var(--accent)",lineHeight:1}},["UNIFORM"]),
+    div({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"48px",letterSpacing:"4px",color:"var(--text)",lineHeight:1}},["MANAGER"]),
+    div({style:{color:"var(--muted)",fontSize:"13px",marginTop:"8px"}},[`${name} ユニフォーム管理システム`]),
+  ]);
+
+  const cards = div({className:"fi",style:{display:"flex",gap:"16px",flexWrap:"wrap",justifyContent:"center"}});
+
+  const makeCard = (icon,title,sub,onClick) => {
+    const c = div({style:{width:"155px",padding:"26px 18px",borderRadius:"16px",border:"1.5px solid var(--border)",background:"var(--card)",cursor:"pointer",textAlign:"center",transition:"all .2s"}},[
+      div({style:{fontSize:"38px",marginBottom:"10px"}},[icon]),
+      div({style:{fontWeight:700,fontSize:"17px",marginBottom:"4px"}},[title]),
+      div({style:{fontSize:"12px",color:"var(--muted)"}},[sub]),
+    ]);
+    c.addEventListener("click",onClick);
+    c.addEventListener("mouseenter",()=>{ c.style.borderColor="var(--accent)"; c.style.transform="translateY(-4px)"; c.style.boxShadow="0 12px 32px rgba(244,162,40,.15)"; });
+    c.addEventListener("mouseleave",()=>{ c.style.borderColor=""; c.style.transform=""; c.style.boxShadow=""; });
+    return c;
+  };
+
+  cards.append(
+    makeCard("🏫","教員","管理者ログイン",()=>renderTeacherLogin()),
+    makeCard("👕","生徒","生徒ログイン",()=>renderStudentRouter()),
+  );
+
+  wrap.append(logo, cards);
+  app.append(wrap);
+}
+
+// ─── TEACHER LOGIN ──────────────────────────────────────────────────────────────
+function renderTeacherLogin(){
+  render(()=>{
+    const wrap = div({style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
+    const card = div({className:"card fi",style:{maxWidth:"340px",width:"100%",padding:"28px"}});
+    const pwInp = inp({className:"inp",type:"password",placeholder:"パスワードを入力"});
+    const errEl = div({className:"hidden"});
+    const go = ()=>{
+      if(pwInp.value===S.cfg.teacherPw){ S.role="teacher"; render(renderTeacher); }
+      else{ errEl.className="err-box"; errEl.textContent="⚠ パスワードが違います"; }
+    };
+    pwInp.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+    card.append(
+      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"18px"}},["🏫 教員ログイン"]),
+      ff("パスワード",div({},[pwInp,div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"4px"}},["デモ: teacher123"])])),
+      errEl,
+      btn({className:"btn btn-p",style:{width:"100%",marginTop:"12px",justifyContent:"center"},onClick:go},["ログイン"]),
+      btn({className:"btn btn-g",style:{width:"100%",marginTop:"8px",justifyContent:"center"},onClick:()=>render(renderLogin)},["← 戻る"]),
+    );
+    wrap.append(card);
+    app.append(wrap);
+  });
+}
+
+// ─── STUDENT ROUTER ─────────────────────────────────────────────────────────────
+function renderStudentRouter(){
+  render(()=>{
+    const wrap = div({style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
+    const card = div({className:"card fi",style:{maxWidth:"400px",width:"100%",padding:"28px"}});
+    card.append(
+      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"6px"}},["👕 生徒ログイン"]),
+      div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"20px"}},["はじめての方は「新規登録」、登録済みの方は「ログイン」へ。"]),
+      div({style:{display:"flex",flexDirection:"column",gap:"10px"}},[
+        btn({className:"btn btn-p",style:{width:"100%",justifyContent:"center",padding:"13px 0",fontSize:"14px"},onClick:()=>renderStudentReg()},["✨ 新規登録（はじめての方）"]),
+        btn({className:"btn btn-g",style:{width:"100%",justifyContent:"center",padding:"13px 0",fontSize:"14px"},onClick:()=>renderStudentLogin()},["🔑 ログイン（登録済みの方）"]),
+      ]),
+      btn({className:"btn btn-g sm",style:{marginTop:"16px",width:"100%",justifyContent:"center"},onClick:()=>render(renderLogin)},["← 戻る"]),
+    );
+    wrap.append(card);
+    app.append(wrap);
+  });
+}
+
+// ─── STUDENT REGISTRATION ───────────────────────────────────────────────────────
+function renderStudentReg(){
+  render(()=>{
+    const wrap = div({style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
+    const card = div({className:"fi",style:{maxWidth:"480px",width:"100%",background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--r)",overflow:"hidden"}});
+
+    let step=1;
+    const form={name:"",kana:"",dob:"",gender:"",grade:"",cls:"",number:""};
+    let pw="",pw2="";
+
+    const hdr = div({style:{padding:"18px 24px",background:"var(--navy)",borderBottom:"1px solid var(--border)"}});
+    const body= div({style:{padding:"24px"}});
+    const ftr = div({style:{padding:"16px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px"}});
+    card.append(hdr,body,ftr);
+
+    const rebuildHdr=()=>{
+      hdr.innerHTML="";
+      hdr.append(
+        div({style:{fontWeight:700,fontSize:"15px",marginBottom:"14px"}},["✨ 新規登録"]),
+        stepBar(["プロフィール入力","パスワード設定"],step),
+      );
+    };
+
+    // inputs refs
+    let nameI,kanaI,dobI,gradeS,clsS,numberI,pwI,pw2I;
+    let genderVal="";
+    const genderBtns=[];
+
+    const setGender=(v)=>{
+      genderVal=v; form.gender=v;
+      genderBtns.forEach(b=>{ b.classList.toggle("on", b.dataset.val===v); });
+    };
+
+    const buildStep1=()=>{
+      body.innerHTML="";
+      const errEl=div({className:"hidden"});
+
+      nameI=inp({className:"inp",placeholder:"田中 花子",value:form.name});
+      nameI.addEventListener("input",e=>form.name=e.target.value);
+      kanaI=inp({className:"inp",placeholder:"たなか はなこ",value:form.kana});
+      kanaI.addEventListener("input",e=>form.kana=e.target.value);
+      dobI=inp({className:"inp",type:"date",value:form.dob});
+      dobI.addEventListener("input",e=>form.dob=e.target.value);
+
+      genderBtns.length=0;
+      const genderRow=div({style:{display:"flex",gap:"8px"}});
+      [["male","男性"],["female","女性"],["other","その他/回答しない"]].forEach(([v,l])=>{
+        const b=btn({className:`sc ${genderVal===v?"on":""}`,style:{flex:1,justifyContent:"center"},"data-val":v},[l]);
+        b.addEventListener("click",()=>setGender(v));
+        genderBtns.push(b); genderRow.append(b);
+      });
+
+      gradeS=sel({className:"inp"},[opt("","—",!form.grade),...["1","2","3"].map(g=>opt(g,g+"年",g===form.grade))]);
+      gradeS.addEventListener("change",e=>form.grade=e.target.value);
+      clsS=sel({className:"inp"},[opt("","—",!form.cls),...CLS_OPTS.map(c=>opt(c,c+"組",c===form.cls))]);
+      clsS.addEventListener("change",e=>form.cls=e.target.value);
+      numberI=inp({className:"inp",placeholder:"01",value:form.number});
+      numberI.addEventListener("input",e=>form.number=e.target.value);
+
+      body.append(
+        div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[ 
+          div({className:"grid2"},[ff("氏名 *",nameI),ff("ふりがな *",kanaI)]),
+          ff("生年月日 *",dobI),
+          ff("性別 *",genderRow),
+          div({style:{height:"1px",background:"var(--border)"}}),
+          div({className:"grid3"},[ff("学年 *",gradeS),ff("クラス *",clsS),ff("出席番号 *",numberI)]),
+          errEl,
+        ]),
+      );
+
+      ftr.innerHTML="";
+      ftr.append(
+        btn({className:"btn btn-g",onClick:()=>renderStudentRouter()},["← 戻る"]),
+        div({style:{flex:1}}),
+        btn({className:"btn btn-p",onClick:()=>{
+          if(!form.name.trim())   return showErr(errEl,"氏名を入力してください");
+          if(!form.kana.trim())   return showErr(errEl,"ふりがなを入力してください");
+          if(!form.dob)           return showErr(errEl,"生年月日を入力してください");
+          if(!form.gender)        return showErr(errEl,"性別を選択してください");
+          if(!form.grade)         return showErr(errEl,"学年を選択してください");
+          if(!form.cls)           return showErr(errEl,"クラスを選択してください");
+          if(!form.number.trim()) return showErr(errEl,"出席番号を入力してください");
+          const dup=findStudent(form.grade,form.cls,form.number.trim());
+          if(dup&&dup.registered) return showErr(errEl,"この学年・クラス・出席番号はすでに登録済みです。「ログイン」をお使いください。");
+          step=2; rebuildHdr(); buildStep2();
+        }},["次へ →"]),
+      );
+    };
+
+    const buildStep2=()=>{
+      body.innerHTML="";
+      const errEl=div({className:"hidden"});
+      pwI=inp({className:"inp",type:"password",placeholder:"••••••••"});
+      pwI.addEventListener("input",e=>pw=e.target.value);
+      pw2I=inp({className:"inp",type:"password",placeholder:"••••••••"});
+      pw2I.addEventListener("input",e=>pw2=e.target.value);
+
+      body.append(div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
+        div({style:{padding:"14px",background:"rgba(46,204,113,.07)",borderRadius:"8px",border:"1px solid rgba(46,204,113,.2)"}},[
+          div({style:{fontWeight:700,fontSize:"14px"}},[form.name]),
+          div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},[`${form.kana} · ${form.grade}年${form.cls}組 · No.${form.number}`]),
+        ]),
+        ff("パスワード（6文字以上）*",pwI),
+        ff("パスワード（確認）*",pw2I),
+        errEl,
+      ]));
+
+      pw2I.addEventListener("keydown",e=>{ if(e.key==="Enter") doFinish(errEl); });
+
+      ftr.innerHTML="";
+      ftr.append(
+        btn({className:"btn btn-g",onClick:()=>{ step=1; rebuildHdr(); buildStep1(); }},["← 戻る"]),
+        div({style:{flex:1}}),
+        btn({className:"btn btn-p",onClick:()=>doFinish(errEl)},["登録してログイン ✓"]),
+      );
+    };
+
+    const doFinish=(errEl)=>{
+      if(pw.length<6)  return showErr(errEl,"パスワードは6文字以上で設定してください");
+      if(pw!==pw2)     return showErr(errEl,"パスワードが一致しません");
+      const id=selfRegister(form,pw);
+      S.role="student"; S.sid=id;
+      render(renderStudent);
+    };
+
+    rebuildHdr(); buildStep1();
+    wrap.append(card);
+    app.append(wrap);
+  });
+}
+
+// ─── STUDENT LOGIN ──────────────────────────────────────────────────────────────
+function renderStudentLogin(){
+  render(()=>{
+    const wrap = div({style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
+    const card = div({className:"card fi",style:{maxWidth:"400px",width:"100%",padding:"28px"}});
+    const errEl= div({className:"hidden"});
+    let found=null, pw="";
+    let gradeVal="",clsVal="",numVal="";
+
+    const foundBox=div({className:"hidden si"});
+    const pwWrap=div({className:"hidden"});
+    const pwInp=inp({className:"inp",type:"password",placeholder:"パスワードを入力"});
+    pwInp.addEventListener("input",e=>pw=e.target.value);
+    pwInp.addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+    pwWrap.append(ff("パスワード",pwInp));
+
+    const gradeS=sel({className:"inp"},[opt("","—",true),...["1","2","3"].map(g=>opt(g,g+"年"))]);
+    const clsS=sel({className:"inp"},[opt("","—",true),...CLS_OPTS.map(c=>opt(c,c+"組"))]);
+    const numI=inp({className:"inp",placeholder:"01"});
+    gradeS.addEventListener("change",e=>{ gradeVal=e.target.value; resetFound(); });
+    clsS.addEventListener("change",e=>{ clsVal=e.target.value; resetFound(); });
+    numI.addEventListener("input",e=>{ numVal=e.target.value; resetFound(); });
+
+    const resetFound=()=>{ found=null; foundBox.className="hidden"; pwWrap.className="hidden"; errEl.className="hidden"; pw=""; pwInp.value=""; };
+
+    const findBtn=btn({className:"btn btn-g",style:{justifyContent:"center"},onClick:()=>{
+      errEl.className="hidden";
+      if(!gradeVal||!clsVal||!numVal.trim()) return showErr(errEl,"学年・クラス・出席番号をすべて入力してください");
+      const s=findStudent(gradeVal,clsVal,numVal.trim());
+      if(!s) return showErr(errEl,"該当する生徒が見つかりません");
+      if(!s.registered) return showErr(errEl,"まず「新規登録」を行ってください");
+      found=s;
+      foundBox.className="si";
+      foundBox.innerHTML="";
+      foundBox.append(div({style:{padding:"10px 14px",background:"rgba(74,158,255,.08)",borderRadius:"8px",border:"1px solid rgba(74,158,255,.2)",fontSize:"13px"}},[
+        span({style:{fontWeight:700}},[s.name]),
+        span({style:{color:"var(--muted)",marginLeft:"8px"}},[`${s.grade}年${s.cls}組 No.${s.number}`]),
+      ]));
+      pwWrap.className=""; pw=""; pwInp.value="";
+    }},["検索"]);
+
+    const doLogin=()=>{
+      if(!found) return;
+      if(found.passwordHash!==hp(pw)) return showErr(errEl,"パスワードが違います");
+      S.role="student"; S.sid=found.id;
+      render(renderStudent);
+    };
+    const loginBtn=btn({className:"btn btn-p",style:{width:"100%",justifyContent:"center"},onClick:doLogin},["ログイン"]);
+
+    card.append(
+      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"18px"}},["🔑 生徒ログイン"]),
+      div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
+        div({className:"grid3"},[ff("学年",gradeS),ff("クラス",clsS),ff("出席番号",numI)]),
+        findBtn, foundBox, pwWrap, errEl, loginBtn,
+        btn({className:"btn btn-g sm",style:{width:"100%",justifyContent:"center"},onClick:()=>renderStudentRouter()},["← 戻る"]),
+      ]),
+    );
+    wrap.append(card);
+    app.append(wrap);
+  });
+}
+
+const showErr=(el,msg)=>{ el.className="err-box"; el.textContent=`⚠ ${msg}`; };
+
+// ─── TEACHER APP ────────────────────────────────────────────────────────────────
+function renderTeacher(){
+  app.innerHTML="";
+  const hdr = div({style:{background:"var(--navy-mid)",borderBottom:"1px solid var(--border)",padding:"12px 24px",display:"flex",alignItems:"center",gap:"12px"}},[
+    span({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"22px",letterSpacing:"3px",color:"var(--accent)"}},[`${S.cfg.clubName||"部活"} UNIFORM`]),
+    badge("b-y","教員"),
+    div({style:{marginLeft:"auto"}},[btn({className:"btn btn-g sm",onClick:()=>render(renderLogin)},["ログアウト"])]),
+  ]);
+
+  const content = div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
+
+  const TABS=[["items","📋 ユニフォーム"],["students","👥 生徒"],["overview","📊 集計"],["settings","⚙️ 設定"]];
+  let curTab="items";
+
+  const tabBar = div({className:"tabs",style:{marginBottom:"24px"}});
+  const tabBtns={};
+  TABS.forEach(([k,l])=>{
+    const b=btn({className:`tab ${k===curTab?"on":""}`,onClick:()=>switchTab(k)},[l]);
+    tabBtns[k]=b; tabBar.append(b);
+  });
+
+  const tabContent=div({});
+  content.append(tabBar,tabContent);
+
+  const switchTab=(k)=>{
+    curTab=k;
+    TABS.forEach(([tk])=>tabBtns[tk].className=`tab ${tk===k?"on":""}`);
+    clearAllCountdowns();
+    tabContent.innerHTML="";
+    if(k==="items")    renderTItems(tabContent);
+    if(k==="students") renderTStudents(tabContent);
+    if(k==="overview") renderTOverview(tabContent);
+    if(k==="settings") renderTSettings(tabContent);
+  };
+  switchTab("items");
+
+  app.append(hdr,content);
+}
+
+// ── Teacher: Items ──────────────────────────────────────────────────────────────
+function renderTItems(root){
+  root.innerHTML="";
+  const list=div({style:{display:"flex",flexDirection:"column",gap:"12px"}});
+  const rebuild=()=>{
+    list.innerHTML="";
+    if(S.items.length===0){ list.append(emptyState("📋","項目がありません")); return; }
+    S.items.forEach(item=>list.append(makeItemCard(item,rebuild)));
+  };
+
+  root.append(
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}},[
+      div({},[div({style:{fontSize:"20px",fontWeight:700}},["ユニフォーム項目"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.items.length}件`])]),
+      btn({className:"btn btn-p",onClick:()=>openItemModal(null,rebuild)},["＋ 新規追加"]),
+    ]),
+    list,
+  );
+  rebuild();
+}
+
+function makeItemCard(item, onUpdate){
+  const expired=isExp(item.deadline);
+  const resps=getItemResp(item.id);
+  const done=Object.keys(resps).length;
+  const total=S.students.length;
+  const pct=total?Math.round(done/total*100):0;
+
+  const detailRow=div({className:"hidden si",style:{marginTop:"16px",paddingTop:"16px",borderTop:"1px solid var(--border)"}});
+  let expanded=false;
+
+  const progressFill=div({className:"pf",style:{width:`${pct}%`}});
+  const cdEl=span({className:"cd"},[expired?"締切済":"..."]);
+
+  const card=div({className:"card",style:{cursor:"pointer"}});
+  const header=div({onClick:()=>{
+    expanded=!expanded;
+    if(expanded){
+      detailRow.className="si";
+      detailRow.innerHTML="";
+      detailRow.append(makeTItemDetail(item));
+    } else {
+      detailRow.className="hidden";
+    }
+  },style:{display:"flex",alignItems:"flex-start",gap:"16px"}},[
+    thumb(item,54,22),
+    div({style:{flex:1,minWidth:0}},[
+      div({style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"4px"}},[
+        span({style:{fontWeight:700,fontSize:"15px"}},[item.name]),
+        item.required?badge("b-r","必須"):"",
+        badge(expired?"b-0":"b-g",expired?"締切済":"受付中"),
+      ]),
+      div({style:{color:"var(--muted)",fontSize:"12px",marginBottom:"6px"}},[item.description||""]),
+      div({style:{fontSize:"12px",color:"var(--muted)",display:"flex",gap:"14px",flexWrap:"wrap"}},[
+        span({},[span({},[""]),cdEl]),
+        span({},[`📅 ${fmtD(item.deadline)}`]),
+        span({},[`✅ ${done}/${total}名`]),
+      ]),
+      div({style:{marginTop:"8px"}},[div({className:"pb"},[progressFill])]),
+    ]),
+    div({style:{display:"flex",gap:"6px",flexShrink:0}},[
+      btn({className:"btn btn-g sm",onClick:e=>{e.stopPropagation();openItemModal(item,onUpdate);}},["編集"]),
+      btn({className:"btn btn-d sm",onClick:e=>{e.stopPropagation();if(confirm("削除しますか？")){S.items=S.items.filter(i=>i.id!==item.id);save();onUpdate();}}},["削除"]),
+    ]),
+  ]);
+  card.append(header,detailRow);
+  if(!expired) startCountdown(cdEl,item.deadline);
+  return card;
+}
+
+function makeTItemDetail(item){
+  const rows=S.students.map(s=>{
+    const r=getResp(item.id,s.id);
+    const tr=el("tr");
+    tr.append(el("td",{},[s.name]),el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
+      el("td",{},[r?badge("b-g",r.size):badge("b-0","未回答")]),
+      el("td",{style:{color:"var(--muted)"}},[r?fmtD(r.submittedAt):"—"]));
+    return tr;
+  });
+  const tbl=el("table",{},[
+    el("thead",{},[el("tr",{},[el("th",{},["生徒"]),el("th",{},["学年/組"]),el("th",{},["サイズ"]),el("th",{},["提出日時"])])]),
+    el("tbody",{},rows),
+  ]);
+  return div({className:"tw"},[tbl]);
+}
+
+function openItemModal(item, onSave){
+  const isE=!!item;
+  let name=item?.name||"", desc=item?.description||"", sizesStr=item?.sizes?.join(", ")||"XS, S, M, L, XL, XXL";
+  let dlVal=item?.deadline?item.deadline.slice(0,16):"", required=item?.required??false;
+  let imageUrl=item?.imageUrl||null;
+
+  const box=div({className:"mb"});
+  const errEl=div({className:"hidden"});
+
+  // image upload
+  const imgPreview=div({style:{minHeight:"80px",display:"flex",alignItems:"center",justifyContent:"center"}});
+  const fileInp=inp({type:"file",accept:"image/*",style:{display:"none"}});
+  const uzDiv=div({className:"uz"},[imgPreview,fileInp]);
+  const rebuildPreview=()=>{
+    imgPreview.innerHTML="";
+    if(imageUrl){ const i=el("img",{src:imageUrl,style:{maxHeight:"130px",maxWidth:"100%",borderRadius:"8px"}}); imgPreview.append(i); }
+    else imgPreview.innerHTML=`<div style="color:var(--muted)"><div style="font-size:28px;margin-bottom:8px">📷</div><div style="font-size:13px">クリック or ドラッグで画像アップロード</div></div>`;
+  };
+  rebuildPreview();
+  uzDiv.addEventListener("click",()=>fileInp.click());
+  fileInp.addEventListener("change",e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{imageUrl=ev.target.result;rebuildPreview();}; r.readAsDataURL(f); });
+  uzDiv.addEventListener("dragover",e=>{e.preventDefault();uzDiv.classList.add("dg");});
+  uzDiv.addEventListener("dragleave",()=>uzDiv.classList.remove("dg"));
+  uzDiv.addEventListener("drop",e=>{e.preventDefault();uzDiv.classList.remove("dg");const f=e.dataTransfer.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{imageUrl=ev.target.result;rebuildPreview();};r.readAsDataURL(f);});
+  const delImgBtn=btn({className:"btn btn-g sm",style:{marginTop:"8px",display:imageUrl?"inline-flex":"none"},onClick:()=>{imageUrl=null;rebuildPreview();delImgBtn.style.display="none";}},["画像を削除"]);
+
+  const nameI=inp({className:"inp",value:name,placeholder:"ゲームシャツ（半袖）"}); nameI.addEventListener("input",e=>name=e.target.value);
+  const descI=ta({className:"inp",rows:2},desc); descI.addEventListener("input",e=>desc=e.target.value);
+  const sizI=inp({className:"inp",value:sizesStr}); sizI.addEventListener("input",e=>sizesStr=e.target.value);
+  const dlI=inp({className:"inp",type:"datetime-local",value:dlVal}); dlI.addEventListener("input",e=>dlVal=e.target.value);
+  const reqChk=inp({type:"checkbox",checked:required,style:{width:"16px",height:"16px",accentColor:"var(--accent)"}}); reqChk.addEventListener("change",e=>required=e.target.checked);
+
+  box.append(
+    mhdr(isE?"項目を編集":"新規項目を追加",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+      ff("見本画像",div({},[uzDiv,delImgBtn])),
+      ff("項目名 *",nameI), ff("説明",descI),
+      ff("サイズ選択肢（カンマ区切り）*",sizI),
+      ff("締切日時 *",dlI),
+      label({style:{display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",fontSize:"13px"}},[reqChk," 必須項目にする"]),
+      errEl,
+    ]),
+    mftr(()=>ov.remove(),()=>{
+      if(!name.trim()||!dlVal) return showErr(errEl,"名前と締切日を入力してください");
+      const sl=sizesStr.split(/[,、\s]+/).map(s=>s.trim()).filter(Boolean);
+      if(!sl.length) return showErr(errEl,"サイズを入力してください");
+      const data={name:name.trim(),description:desc.trim(),sizes:sl,deadline:new Date(dlVal).toISOString(),required,imageUrl};
+      if(isE){ Object.assign(item,data); }
+      else { S.items.push({...data,id:genId(),createdAt:new Date().toISOString()}); }
+      save(); ov.remove(); onSave();
+    },isE?"更新":"追加"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+// ── Teacher: Students ───────────────────────────────────────────────────────────
+function renderTStudents(root){
+  root.innerHTML="";
+  const rebuild=()=>{
+    root.innerHTML="";
+    const regCount=S.students.filter(s=>s.registered).length;
+    const rows=S.students.map(s=>{
+      const ans=S.items.filter(i=>getResp(i.id,s.id)).length;
+      const tr=el("tr");
+      tr.append(
+        el("td",{style:{color:"var(--muted)"}},[s.number]),
+        el("td",{},[div({style:{fontWeight:600}},[s.name]),div({style:{fontSize:"11px",color:"var(--muted)"}},[s.kana||""])]),
+        el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
+        el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[fmtDs(s.dob)]),
+        el("td",{},[s.registered?badge("b-g","✓ 済"):badge("b-y","未")]),
+        el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
+        el("td",{},[btn({className:"btn btn-d sm",onClick:()=>{ if(confirm(`${s.name}を削除しますか？`)){ S.students=S.students.filter(x=>x.id!==s.id); save(); rebuild(); } }},["削除"])]),
+      );
+      return tr;
+    });
+    const tbl=el("table",{},[
+      el("thead",{},[el("tr",{},[el("th",{},["出席No."]),el("th",{},["氏名/ふりがな"]),el("th",{},["学年/組"]),el("th",{},["生年月日"]),el("th",{},["登録"]),el("th",{},["回答"]),el("th",{})])]),
+      el("tbody",{},rows.length?rows:[el("tr",{},[el("td",{colSpan:7,style:{textAlign:"center",color:"var(--muted)",padding:"32px"}},["生徒が登録されていません"])])]),
+    ]);
+    root.append(
+      div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}},[
+        div({},[div({style:{fontSize:"20px",fontWeight:700}},["生徒管理"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.students.length}名（登録済:${regCount}名）`])]),
+        btn({className:"btn btn-p",onClick:()=>openStudentModal(rebuild)},["＋ 生徒を追加"]),
+      ]),
+      div({className:"tw"},[tbl]),
+    );
+  };
+  rebuild();
+}
+
+function openStudentModal(onSave){
+  const form={name:"",kana:"",dob:"",gender:"",grade:"1",cls:"",number:""};
+  const box=div({className:"mb"});
+  const errEl=div({className:"hidden"});
+  const nameI=inp({className:"inp",placeholder:"田中 花子"}); nameI.addEventListener("input",e=>form.name=e.target.value);
+  const kanaI=inp({className:"inp",placeholder:"たなか はなこ"}); kanaI.addEventListener("input",e=>form.kana=e.target.value);
+  const dobI=inp({className:"inp",type:"date"}); dobI.addEventListener("input",e=>form.dob=e.target.value);
+  const genS=sel({className:"inp"},[opt("","— 選択 —",true),opt("male","男性"),opt("female","女性"),opt("other","その他")]); genS.addEventListener("change",e=>form.gender=e.target.value);
+  const gradeS=sel({className:"inp"},[opt("1","1年",true),opt("2","2年"),opt("3","3年")]); gradeS.addEventListener("change",e=>form.grade=e.target.value);
+  const clsS=sel({className:"inp"},[opt("","—",true),...CLS_OPTS.map(c=>opt(c,c+"組"))]); clsS.addEventListener("change",e=>form.cls=e.target.value);
+  const numI=inp({className:"inp",placeholder:"01"}); numI.addEventListener("input",e=>form.number=e.target.value);
+
+  box.append(
+    mhdr("生徒を追加（教員登録）",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"13px"}},[
+      div({style:{fontSize:"12px",color:"var(--muted)",padding:"10px 12px",background:"rgba(244,162,40,.06)",borderRadius:"8px",border:"1px solid rgba(244,162,40,.15)"}},[
+        "氏名・学年など基本情報を登録。生徒は新規登録時に学年・クラス・出席番号で照合されます。",
+      ]),
+      div({className:"grid2"},[ff("氏名 *",nameI),ff("ふりがな",kanaI)]),
+      ff("生年月日",dobI), ff("性別",genS),
+      div({className:"grid3"},[ff("学年 *",gradeS),ff("クラス *",clsS),ff("出席番号 *",numI)]),
+      errEl,
+    ]),
+    mftr(()=>ov.remove(),()=>{
+      if(!form.name.trim()||!form.number.trim()||!form.cls) return showErr(errEl,"氏名・クラス・出席番号は必須です");
+      S.students.push({...form,id:genId(),passwordHash:null,registered:false});
+      save(); ov.remove(); onSave();
+    },"追加"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+// ── Teacher: Overview ───────────────────────────────────────────────────────────
+function renderTOverview(root){
+  root.innerHTML="";
+  if(S.items.length===0){ root.append(emptyState("📊","項目がありません")); return; }
+
+  let selId=S.items[0].id;
+  const content=div({});
+  const rebuild=()=>{
+    content.innerHTML="";
+    const item=S.items.find(i=>i.id===selId);
+    if(!item) return;
+    const rs=getItemResp(item.id);
+    const sc={};
+    Object.values(rs).forEach(r=>{ sc[r.size]=(sc[r.size]||0)+1; });
+    const ans=S.students.filter(s=>getResp(item.id,s.id));
+    const un=S.students.filter(s=>!getResp(item.id,s.id));
+
+    const sizeBars=item.sizes.map(sz=>
+      div({style:{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}},[
+        span({style:{width:"36px",fontWeight:700,fontSize:"13px"}},[sz]),
+        div({className:"pb",style:{flex:1}},[div({className:"pf",style:{width:`${ans.length?(sc[sz]||0)/ans.length*100:0}%`}})]),
+        span({style:{width:"36px",textAlign:"right",fontSize:"13px",color:"var(--muted)"}},[`${sc[sz]||0}名`]),
+      ])
+    );
+    const unList=un.length===0
+      ?[div({style:{color:"var(--green)",fontSize:"13px"}},["✅ 全員回答済み！"])]
+      :un.map(s=>div({style:{fontSize:"13px",padding:"4px 0",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between"}},[span({},[s.name]),span({style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`])]));
+
+    const tblRows=S.students.map(s=>{
+      const r=getResp(item.id,s.id);
+      const tr=el("tr");
+      tr.append(el("td",{style:{fontWeight:600}},[s.name]),el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
+        el("td",{},[r?badge("b-g",r.size):badge("b-0","未回答")]),el("td",{style:{color:"var(--muted)"}},[r?fmtD(r.submittedAt):"—"]));
+      return tr;
+    });
+
+    content.append(
+      div({style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"16px",marginBottom:"20px"}},[
+        div({className:"card"},[div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"12px",fontWeight:600}},["サイズ別集計"]),...sizeBars]),
+        div({className:"card"},[div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"12px",fontWeight:600}}),[`未回答者 (${un.length}名)`],...unList]),
+      ]),
+      div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["氏名"]),el("th",{},["学年/組"]),el("th",{},["サイズ"]),el("th",{},["提出日時"])])]),
+        el("tbody",{},tblRows),
+      ])]),
+    );
+  };
+
+  const selEl=sel({className:"inp",style:{maxWidth:"360px"}},[...S.items.map(i=>opt(i.id,i.name,i.id===selId))]);
+  selEl.addEventListener("change",e=>{ selId=e.target.value; rebuild(); });
+  root.append(
+    div({style:{fontSize:"20px",fontWeight:700,marginBottom:"20px"}},["回答一覧・集計"]),
+    div({style:{marginBottom:"20px"}},[label({className:"ff-label"},["集計する項目"]),selEl]),
+    content,
+  );
+  rebuild();
+}
+
+// ── Teacher: Settings ───────────────────────────────────────────────────────────
+function renderTSettings(root){
+  root.innerHTML="";
+  const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"13px",marginLeft:"12px"}},["✓ 保存しました"]);
+  const showSaved=()=>{ savedEl.className=""; setTimeout(()=>savedEl.className="hidden",2000); };
+
+  const clubI=inp({className:"inp",value:S.cfg.clubName,placeholder:"○○部"}); clubI.addEventListener("input",e=>S.cfg.clubName=e.target.value);
+  const grtI=ta({className:"inp",rows:3},S.cfg.greeting); grtI.addEventListener("input",e=>S.cfg.greeting=e.target.value);
+  const pwI=inp({className:"inp",type:"password",value:S.cfg.teacherPw}); pwI.addEventListener("input",e=>S.cfg.teacherPw=e.target.value);
+
+  root.append(
+    div({style:{maxWidth:"600px"}},[
+      div({style:{fontSize:"20px",fontWeight:700,marginBottom:"6px"}},["⚙️ 設定"]),
+      div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"24px"}},["教員側の管理設定"]),
+      div({className:"card",style:{marginBottom:"16px"}},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"16px"}},["🏫 基本情報"]),
+        div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[ff("部活名・チーム名",clubI),ff("生徒へのお知らせ（任意）",grtI)]),
+      ]),
+      div({className:"card",style:{marginBottom:"24px"}},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"16px"}},["🔐 教員パスワード変更"]),
+        ff("新しいパスワード",pwI),
+      ]),
+      div({style:{display:"flex",alignItems:"center"}},[
+        btn({className:"btn btn-p",onClick:()=>{ save(); showSaved(); }},["保存する"]),
+        savedEl,
+      ]),
+    ]),
+  );
+}
+
+// ─── STUDENT APP ────────────────────────────────────────────────────────────────
+function renderStudent(){
+  clearAllCountdowns();
+  app.innerHTML="";
+  const student=S.students.find(s=>s.id===S.sid);
+  if(!student){ render(renderLogin); return; }
+
+  const gLabel={male:"男性",female:"女性",other:"その他"}[student.gender]||"";
+  const pending=S.items.filter(i=>!getResp(i.id,S.sid)&&!isExp(i.deadline));
+  const done   =S.items.filter(i=> getResp(i.id,S.sid));
+  const expired=S.items.filter(i=>!getResp(i.id,S.sid)&& isExp(i.deadline));
+
+  const hdr=div({style:{background:"var(--navy-mid)",borderBottom:"1px solid var(--border)",padding:"12px 24px",display:"flex",alignItems:"center",gap:"12px"}},[
+    span({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"22px",letterSpacing:"3px",color:"var(--accent)"}},[`${S.cfg.clubName||"部活"} UNIFORM`]),
+    badge("b-g","生徒"),
+    div({style:{marginLeft:"auto",display:"flex",alignItems:"center",gap:"10px"}},[
+      div({style:{textAlign:"right"}},[
+        div({style:{fontSize:"13px",fontWeight:700}},[student.name]),
+        div({style:{fontSize:"11px",color:"var(--muted)"}},[`${student.grade}年${student.cls}組 No.${student.number}`]),
+      ]),
+      btn({className:"btn btn-g sm",onClick:()=>openStudentSettings(student,renderStudent)},["⚙️ 設定"]),
+      btn({className:"btn btn-g sm",onClick:()=>{ S.role=null; S.sid=null; render(renderLogin); }},["ログアウト"]),
+    ]),
+  ]);
+
+  const main=div({style:{maxWidth:"760px",margin:"0 auto",padding:"24px"}});
+
+  // greeting
+  if(S.cfg.greeting){
+    main.append(div({style:{marginBottom:"20px",padding:"12px 16px",background:"rgba(74,158,255,.07)",borderRadius:"10px",border:"1px solid rgba(74,158,255,.2)",fontSize:"13px",lineHeight:1.7}},["📢 "+S.cfg.greeting]));
+  }
+
+  // profile card
+  const avatar=div({style:{width:"44px",height:"44px",borderRadius:"50%",background:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",fontWeight:700,color:"#000",flexShrink:0}},[student.name[0]]);
+  const miniStats=div({style:{display:"flex",gap:"14px"}},[
+    miniStat("未回答",pending.length,"var(--accent)"),
+    miniStat("回答済",done.length,"var(--green)"),
+    miniStat("期限切",expired.length,"var(--red)"),
+  ]);
+  main.append(div({className:"card fi",style:{marginBottom:"24px",padding:"14px 20px",display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}},[
+    avatar,
+    div({style:{flex:1}},[ 
+      div({style:{fontWeight:700,fontSize:"15px"}},[student.name,span({style:{fontSize:"12px",color:"var(--muted)",fontWeight:400}},["（"+student.kana+"）"])]),
+      div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},[`${student.grade}年${student.cls}組 No.${student.number} · ${fmtDs(student.dob)} · ${gLabel}`]),
+    ]),
+    miniStats,
+  ]));
+
+  const rerender=()=>renderStudent();
+
+  if(pending.length>0){
+    main.append(secTitle("⏳ 回答が必要な項目",true));
+    pending.forEach(item=>main.append(makeSItemCard(item,student,rerender)));
+  }
+  if(done.length>0){
+    main.append(secTitle("✅ 回答済み",false));
+    done.forEach(item=>{
+      const r=getResp(item.id,S.sid);
+      const changeBtn=isExp(item.deadline)?null:btn({className:"btn btn-g sm",onClick:()=>openSizeModal(item,student,r,rerender)},["変更"]);
+      main.append(div({className:"card",style:{display:"flex",gap:"14px",alignItems:"center",marginBottom:"10px"}},[
+        thumb(item,44),
+        div({style:{flex:1}},[div({style:{fontWeight:600,fontSize:"14px"}},[item.name]),div({style:{fontSize:"12px",color:"var(--muted)"}},[`提出: ${fmtD(r.submittedAt)}`])]),
+        div({style:{display:"flex",alignItems:"center",gap:"8px"}},[badge("b-g",r.size),changeBtn||""]),
+      ]));
+    });
+  }
+  if(expired.length>0){
+    main.append(secTitle("⛔ 締切済（未回答）",false));
+    expired.forEach(item=>{
+      main.append(div({className:"card",style:{opacity:.6,display:"flex",gap:"14px",alignItems:"center",marginBottom:"10px"}},[
+        thumb(item,44),
+        div({},[div({style:{fontWeight:600,fontSize:"14px"}},[item.name]),div({style:{fontSize:"12px",color:"var(--red)"}},[`締切: ${fmtD(item.deadline)}`])]),
+        badge("b-0","期限切れ"),
+      ]));
+    });
+  }
+  if(S.items.length===0) main.append(emptyState("🎽","現在、回答が必要な項目はありません"));
+
+  app.append(hdr,main);
+}
+
+function makeSItemCard(item, student, onUpdate){
+  const urgent=item.deadline&&(new Date(item.deadline)-now())<864e5*2;
+  const cdEl=span({className:"cd"},["..."]);
+  const card=div({className:"card",style:{marginBottom:"12px",borderColor:urgent?"rgba(244,162,40,.3)":"var(--border)"}});
+  card.append(div({style:{display:"flex",gap:"14px",alignItems:"flex-start"}},[
+    thumb(item,60,26),
+    div({style:{flex:1}},[
+      div({style:{display:"flex",gap:"8px",alignItems:"center",marginBottom:"4px",flexWrap:"wrap"}},[
+        span({style:{fontWeight:700,fontSize:"15px"}},[item.name]),
+        item.required?badge("b-r","必須"):"",
+        urgent?badge("b-y","⚡ 締切間近"):"",
+      ]),
+      item.description?div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"8px"}},[item.description]):"",
+      div({style:{fontSize:"12px",color:urgent?"var(--accent)":"var(--muted)",fontWeight:urgent?700:400},className:"cd"},[cdEl,`（${fmtD(item.deadline)}まで）`]),
+      div({style:{marginTop:"8px",display:"flex",gap:"6px",flexWrap:"wrap"}},item.sizes.map(s=>span({style:{padding:"2px 8px",border:"1px solid var(--border)",borderRadius:"4px",fontSize:"11px",color:"var(--muted)"}},[s]))),
+    ]),
+    btn({className:"btn btn-p",style:{flexShrink:0},onClick:()=>openSizeModal(item,student,null,onUpdate)},["回答する"]),
+  ]));
+  startCountdown(cdEl,item.deadline);
+  return card;
+}
+
+function openSizeModal(item, student, existing, onUpdate){
+  let sel_size=existing?.size||"";
+  const cdEl=span({className:"cd"},["..."]);
+  const sizeGrid=div({className:"sg"});
+  const chips={};
+  item.sizes.forEach(sz=>{
+    const b=btn({className:`sc ${sel_size===sz?"on":""}`,onClick:()=>{ sel_size=sz; item.sizes.forEach(s=>chips[s]?.classList.toggle("on",s===sz)); }},[ sz]);
+    chips[sz]=b; sizeGrid.append(b);
+  });
+
+  const box=div({className:"mb"});
+  const existingNote=existing?div({style:{marginTop:"16px",padding:"12px",background:"rgba(46,204,113,.08)",borderRadius:"8px",fontSize:"13px",color:"var(--green)"}},[`✅ 現在の選択: `,el("strong",{},[existing.size]),`（${fmtD(existing.submittedAt)}提出）`]):"";
+
+  box.append(
+    mhdr("サイズを選択",()=>ov.remove()),
+    div({style:{padding:"24px"}},[
+      div({style:{display:"flex",gap:"16px",marginBottom:"20px",padding:"16px",background:"var(--navy)",borderRadius:"10px"}},[
+        thumb(item,80,36),
+        div({},[
+          div({style:{fontWeight:700,fontSize:"15px",marginBottom:"4px"}},[item.name]),
+          item.description?div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"8px"}},[item.description]):"",
+          div({style:{fontSize:"12px",color:"var(--accent)",fontWeight:700},className:"cd"},[cdEl]),
+        ]),
+      ]),
+      div({style:{marginBottom:"10px",fontSize:"13px",fontWeight:600}},["サイズを選んでください"]),
+      sizeGrid, existingNote,
+    ]),
+    mftr(()=>ov.remove(),()=>{
+      if(!sel_size) return;
+      S.resp[`${item.id}_${student.id}`]={size:sel_size,submittedAt:new Date().toISOString()};
+      save(); ov.remove(); onUpdate();
+    },existing?"変更して提出":"提出する"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+  startCountdown(cdEl,item.deadline);
+}
+
+function openStudentSettings(student, onUpdate){
+  let prof={name:student.name,kana:student.kana||"",dob:student.dob||"",gender:student.gender||""};
+  let pw="",pw2="",genderVal=prof.gender;
+  const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"13px",marginLeft:"8px"}},["✓ 保存"]);
+  const showSaved=()=>{ savedEl.className=""; setTimeout(()=>savedEl.className="hidden",2000); };
+
+  const nameI=inp({className:"inp",value:prof.name}); nameI.addEventListener("input",e=>prof.name=e.target.value);
+  const kanaI=inp({className:"inp",value:prof.kana}); kanaI.addEventListener("input",e=>prof.kana=e.target.value);
+  const dobI=inp({className:"inp",type:"date",value:prof.dob}); dobI.addEventListener("input",e=>prof.dob=e.target.value);
+
+  const gBtns=[];
+  const gRow=div({style:{display:"flex",gap:"8px"}});
+  [["male","男性"],["female","女性"],["other","その他"]].forEach(([v,l])=>{
+    const b=btn({className:`sc ${genderVal===v?"on":""}`,style:{flex:1,justifyContent:"center"},onClick:()=>{ genderVal=v; prof.gender=v; gBtns.forEach(x=>x.classList.toggle("on",x.dataset.val===v)); }},[l]);
+    b.dataset.val=v; gBtns.push(b); gRow.append(b);
+  });
+
+  const pwI=inp({className:"inp",type:"password",placeholder:"••••••••"}); pwI.addEventListener("input",e=>pw=e.target.value);
+  const pw2I=inp({className:"inp",type:"password",placeholder:"••••••••"}); pw2I.addEventListener("input",e=>pw2=e.target.value);
+  const pwErrEl=div({className:"hidden"});
+
+  const box=div({className:"mb",style:{maxWidth:"480px"}});
+  box.append(
+    mhdr("⚙️ 設定",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"20px"}},[
+      // profile
+      div({},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"14px"}},["👤 プロフィール編集"]),
+        div({style:{display:"flex",flexDirection:"column",gap:"12px"}},[
+          div({className:"grid2"},[ff("氏名",nameI),ff("ふりがな",kanaI)]),
+          ff("生年月日",dobI),
+          ff("性別",gRow),
+          div({style:{display:"flex",alignItems:"center"}},[
+            btn({className:"btn btn-p",onClick:()=>{ if(!prof.name.trim())return; Object.assign(student,prof); save(); showSaved(); onUpdate(); }},["プロフィールを保存"]),
+            savedEl,
+          ]),
+        ]),
+      ]),
+      div({style:{height:"1px",background:"var(--border)"}}),
+      // readonly info
+      div({},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"4px"}},["🔖 登録情報（変更不可）"]),
+        div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"12px"}},["学年・クラス・出席番号は教員のみ変更できます。"]),
+        div({style:{display:"flex",gap:"10px"}},[
+          ...[["学年",`${student.grade}年`],["クラス",`${student.cls}組`],["出席番号",`No.${student.number}`]].map(([l,v])=>
+            div({style:{flex:1,padding:"10px 12px",background:"var(--navy)",borderRadius:"8px",border:"1px solid var(--border)"}},[
+              div({style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px"}},[l]),
+              div({style:{fontWeight:700,fontSize:"14px"}},[v]),
+            ])
+          ),
+        ]),
+      ]),
+      div({style:{height:"1px",background:"var(--border)"}}),
+      // password
+      div({},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"14px"}},["🔐 パスワード変更"]),
+        div({style:{display:"flex",flexDirection:"column",gap:"12px"}},[
+          ff("新しいパスワード（6文字以上）",pwI),
+          ff("確認",pw2I),
+          pwErrEl,
+          btn({className:"btn btn-g",onClick:()=>{
+            if(pw.length<6) return showErr(pwErrEl,"パスワードは6文字以上");
+            if(pw!==pw2)    return showErr(pwErrEl,"パスワードが一致しません");
+            student.passwordHash=hp(pw); save();
+            pw=""; pw2=""; pwI.value=""; pw2I.value=""; pwErrEl.className="hidden";
+            showSaved();
+          }},["パスワードを変更"]),
+        ]),
+      ]),
+    ]),
+    div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end"}},[
+      btn({className:"btn btn-g",onClick:()=>ov.remove()},["閉じる"]),
+    ]),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+// ─── Shared helpers ─────────────────────────────────────────────────────────────
+function emptyState(icon,text){
+  return div({style:{textAlign:"center",padding:"56px 24px",color:"var(--muted)"}},[
+    div({style:{fontSize:"48px",marginBottom:"12px"}},[icon]),
+    div({style:{fontSize:"14px"}},[text]),
+  ]);
+}
+function miniStat(label,value,color){
+  return div({style:{textAlign:"center"}},[
+    div({style:{fontSize:"22px",fontWeight:900,color,fontFamily:"'Bebas Neue',sans-serif",lineHeight:1}},[String(value)]),
+    div({style:{fontSize:"10px",color:"var(--muted)",marginTop:"2px"}},[label]),
+  ]);
+}
+function secTitle(text,accent){
+  return div({style:{fontSize:"14px",fontWeight:700,color:accent?"var(--accent)":"var(--muted)",marginBottom:"14px",marginTop:"4px"}},[text]);
+}
+
+// ─── Boot ───────────────────────────────────────────────────────────────────────
+render(renderLogin);
+</script>
+</body>
+</html>
