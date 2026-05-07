@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>ユニフォーム管理システム</title>
+<title>清教学園バドミントン部 ユニフォーム管理</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&family=Bebas+Neue&display=swap" rel="stylesheet"/>
 <style>
@@ -100,7 +100,7 @@ const isExp = d => d && new Date(d) < now();
 const hp    = s => btoa(encodeURIComponent(s+"uf2024"));
 
 // ─── Default / Seed data ────────────────────────────────────────────────────────
-const DEF_CFG = { clubName:"○○部", teacherPw:"teacher123", greeting:"" };
+const DEF_CFG = { clubName:"清教学園バドミントン部", teacherPw:"teacher123", greeting:"" };
 const SEED_ITEMS = [
   {id:"i1",name:"ゲームシャツ（半袖）",description:"試合用半袖ユニフォーム。チームカラー：紺×白",
    sizes:["XS","S","M","L","XL","XXL"],deadline:new Date(Date.now()+3*864e5).toISOString(),imageUrl:null,required:true,createdAt:new Date().toISOString()},
