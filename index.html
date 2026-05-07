@@ -131,6 +131,11 @@ const DB = {
     try{ const s=await getDocs(collection(db,"responses")); const r={}; s.docs.forEach(d=>r[d.id]=d.data()); return r; }catch{ return {}; }
   },
   async saveResp(key,data){ await setDoc(doc(db,"responses",key),data); },
+  async getMatches(){
+    try{ const s=await getDocs(collection(db,"matches")); return s.docs.map(d=>({id:d.id,...d.data()})); }catch{ return []; }
+  },
+  async saveMatch(m){ await setDoc(doc(db,"matches",m.id),m); },
+  async deleteMatch(id){ await deleteDoc(doc(db,"matches",id)); },
 };
 
 // ─── Utils ─────────────────────────────────────────────────────────────────────
@@ -143,13 +148,13 @@ const isExp = d => d && new Date(d) < now();
 const hp    = s => btoa(encodeURIComponent(s+"uf2024"));
 
 // ─── App State ─────────────────────────────────────────────────────────────────
-const S = { cfg:DEF_CFG, students:[], items:[], resp:{}, role:null, sid:null };
+const S = { cfg:DEF_CFG, students:[], items:[], resp:{}, matches:[], role:null, sid:null };
 
 async function loadAll(){
-  const [cfg, students, items, resp] = await Promise.all([
-    DB.getCfg(), DB.getStudents(), DB.getItems(), DB.getResps()
+  const [cfg, students, items, resp, matches] = await Promise.all([
+    DB.getCfg(), DB.getStudents(), DB.getItems(), DB.getResps(), DB.getMatches()
   ]);
-  S.cfg=cfg; S.students=students; S.items=items; S.resp=resp;
+  S.cfg=cfg; S.students=students; S.items=items; S.resp=resp; S.matches=matches;
 }
 
 const findStudent = (grade,cls,number) =>
@@ -515,7 +520,7 @@ function renderTeacher(){
     div({style:{marginLeft:"auto"}},[btn({className:"btn btn-g sm",onClick:()=>render(renderLogin)},["ログアウト"])]),
   ]);
   const content=div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
-  const TABS=[["items","📋 ユニフォーム"],["students","👥 生徒"],["overview","📊 集計"],["settings","⚙️ 設定"]];
+  const TABS=[["items","📋 ユニフォーム"],["students","👥 生徒"],["overview","📊 集計"],["matches","🏸 試合記録"],["settings","⚙️ 設定"]];
   let curTab="items";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
@@ -526,6 +531,7 @@ function renderTeacher(){
     if(k==="items")    renderTItems(tabContent);
     if(k==="students") renderTStudents(tabContent);
     if(k==="overview") renderTOverview(tabContent);
+    if(k==="matches")  renderTMatches(tabContent);
     if(k==="settings") renderTSettings(tabContent);
   };
   TABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===curTab?"on":""}`,onClick:()=>switchTab(k)},[l]); tabBtns[k]=b; tabBar.append(b); });
@@ -817,6 +823,246 @@ function renderTOverview(root){
   rebuild();
 }
 
+// ── Teacher: Matches ────────────────────────────────────────────────────────────
+function renderTMatches(root){
+  let typeFilter="all"; // all|practice|tournament
+  const rebuild=async()=>{
+    root.innerHTML="";
+    S.matches=await DB.getMatches();
+    S.matches.sort((a,b)=>b.date.localeCompare(a.date));
+    const filtered=typeFilter==="all"?S.matches:S.matches.filter(m=>m.type===typeFilter);
+
+    // summary stats
+    const total=filtered.length;
+    const wins=filtered.filter(m=>m.result==="win").length;
+    const losses=filtered.filter(m=>m.result==="loss").length;
+
+    const filterBar=div({style:{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}});
+    [["all","すべて"],["practice","練習試合"],["tournament","大会"]].forEach(([k,l])=>{
+      const b=btn({className:`sc ${typeFilter===k?"on":""}`,onClick:()=>{ typeFilter=k; rebuild(); }},[l]);
+      filterBar.append(b);
+    });
+
+    const statRow=div({style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"12px",marginBottom:"20px"}},[
+      statCard("試合数",total,"var(--text)"),
+      statCard("勝ち",wins,"var(--green)"),
+      statCard("負け",losses,"var(--red)"),
+    ]);
+
+    // group by student
+    const byStudent={};
+    filtered.forEach(m=>{
+      const key=m.studentId;
+      if(!byStudent[key]) byStudent[key]=[];
+      byStudent[key].push(m);
+    });
+
+    const tblRows=[];
+    S.students.forEach(s=>{
+      const ms=byStudent[s.id]||[];
+      if(!ms.length) return;
+      const w=ms.filter(m=>m.result==="win").length;
+      const l=ms.filter(m=>m.result==="loss").length;
+      const tr=el("tr");
+      tr.append(
+        el("td",{style:{fontWeight:600}},[s.name]),
+        el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
+        el("td",{},[String(ms.length)]),
+        el("td",{style:{color:"var(--green)"}},[String(w)]),
+        el("td",{style:{color:"var(--red)"}},[String(l)]),
+        el("td",{},[ms.length?`${Math.round(w/ms.length*100)}%`:"—"]),
+      );
+      tr.addEventListener("click",()=>openMatchListModal(s,ms,rebuild));
+      tblRows.push(tr);
+    });
+
+    root.append(
+      div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}},[
+        div({style:{fontSize:"20px",fontWeight:700}},["🏸 試合記録"]),
+      ]),
+      filterBar, statRow,
+      tblRows.length?div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["氏名"]),el("th",{},["学年/組"]),el("th",{},["試合数"]),el("th",{},["勝"]),el("th",{},["負"]),el("th",{},["勝率"])])]),
+        el("tbody",{},tblRows),
+      ])]):emptyState("🏸","試合記録がありません"),
+    );
+  };
+  rebuild();
+}
+
+function statCard(label,value,color){
+  return div({className:"card",style:{textAlign:"center",padding:"16px"}},[
+    div({style:{fontSize:"28px",fontWeight:900,color,fontFamily:"'Bebas Neue',sans-serif"}},[String(value)]),
+    div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"4px"}},[label]),
+  ]);
+}
+
+function openMatchListModal(student,matches,onUpdate){
+  const box=div({className:"mb",style:{maxWidth:"600px"}});
+  const listEl=div({});
+  const buildList=()=>{
+    listEl.innerHTML="";
+    if(!matches.length){ listEl.append(emptyState("🏸","記録なし")); return; }
+    matches.sort((a,b)=>b.date.localeCompare(a.date));
+    matches.forEach(m=>{
+      const typeLabel=m.type==="tournament"?"🏆 大会":"🎯 練習試合";
+      const eventLabel=m.eventName?` · ${m.eventName}`:"";
+      const resultBadge=badge(m.result==="win"?"b-g":"b-r",m.result==="win"?"勝ち":"負け");
+      const categoryLabel={singles:"シングルス",doubles:"ダブルス",team:"団体戦"}[m.category]||m.category;
+      const scoreText=m.scores?.length?m.scores.map(s=>`${s.my}-${s.opp}`).join(", "):"";
+      const row=div({style:{padding:"12px 0",borderBottom:"1px solid var(--border)",display:"flex",gap:"12px",alignItems:"flex-start"}},[
+        div({style:{flex:1}},[
+          div({style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"4px"}},[
+            span({style:{fontSize:"12px",color:"var(--muted)"}},[m.date]),
+            span({style:{fontSize:"12px",color:"var(--accent)"}},[typeLabel+eventLabel]),
+            badge("b-0",categoryLabel),
+            resultBadge,
+          ]),
+          div({style:{fontSize:"13px",fontWeight:600,marginBottom:"2px"}},[`vs ${m.opponentName}（${m.opponentSchool}）`]),
+          scoreText?div({style:{fontSize:"12px",color:"var(--muted)"}},[`スコア: ${scoreText}`]):"",
+          m.note?div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},[`📝 ${m.note}`]):"",
+        ]),
+        btn({className:"btn btn-d sm",onClick:async()=>{
+          if(!confirm("削除しますか？"))return;
+          await DB.deleteMatch(m.id);
+          S.matches=S.matches.filter(x=>x.id!==m.id);
+          matches.splice(matches.indexOf(m),1);
+          buildList(); onUpdate();
+        }},["削除"]),
+      ]);
+      listEl.append(row);
+    });
+  };
+  buildList();
+  box.append(
+    mhdr(`🏸 ${student.name}の試合記録`,()=>ov.remove()),
+    div({style:{padding:"24px"}},[listEl]),
+    div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end"}},[
+      btn({className:"btn btn-g",onClick:()=>ov.remove()},["閉じる"]),
+    ]),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+function openMatchModal(student,onSave){
+  // match data
+  let mType="practice", mCategory="singles", mResult="win";
+  let mDate=new Date().toISOString().slice(0,10);
+  let mEventName="", mOpponentName="", mOpponentSchool="", mNote="";
+  let mScoreMode="score"; // score | result
+  let mSets=[{my:"",opp:""}];
+
+  const box=div({className:"mb"});
+  const errEl=div({className:"hidden"});
+  const body=div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}});
+
+  // type buttons
+  const typeRow=div({style:{display:"flex",gap:"8px"}});
+  const typeBtns={};
+  [["practice","🎯 練習試合"],["tournament","🏆 大会"]].forEach(([v,l])=>{
+    const b=btn({className:`sc ${mType===v?"on":""}`,style:{flex:1,justifyContent:"center"},onClick:()=>{
+      mType=v; Object.keys(typeBtns).forEach(k=>typeBtns[k].classList.toggle("on",k===v));
+      eventNameWrap.style.display=v==="tournament"?"block":"none";
+    }},[l]);
+    typeBtns[v]=b; typeRow.append(b);
+  });
+
+  // category buttons
+  const catRow=div({style:{display:"flex",gap:"8px"}});
+  const catBtns={};
+  [["singles","シングルス"],["doubles","ダブルス"],["team","団体戦"]].forEach(([v,l])=>{
+    const b=btn({className:`sc ${mCategory===v?"on":""}`,style:{flex:1,justifyContent:"center"},onClick:()=>{
+      mCategory=v; Object.keys(catBtns).forEach(k=>catBtns[k].classList.toggle("on",k===v));
+    }},[l]);
+    catBtns[v]=b; catRow.append(b);
+  });
+
+  // result buttons
+  const resRow=div({style:{display:"flex",gap:"8px"}});
+  const resBtns={};
+  [["win","勝ち"],["loss","負け"]].forEach(([v,l])=>{
+    const b=btn({className:`sc ${mResult===v?"on":""}`,style:{flex:1,justifyContent:"center"},onClick:()=>{
+      mResult=v; Object.keys(resBtns).forEach(k=>resBtns[k].classList.toggle("on",k===v));
+    }},[l]);
+    resBtns[v]=b; resRow.append(b);
+  });
+
+  // score mode
+  const scoreModeRow=div({style:{display:"flex",gap:"8px"}});
+  const sModeBtns={};
+  [["score","セットごとのスコア"],["result","勝ち負けのみ"]].forEach(([v,l])=>{
+    const b=btn({className:`sc ${mScoreMode===v?"on":""}`,style:{flex:1,justifyContent:"center"},onClick:()=>{
+      mScoreMode=v; Object.keys(sModeBtns).forEach(k=>sModeBtns[k].classList.toggle("on",k===v));
+      scoreWrap.style.display=v==="score"?"block":"none";
+    }},[l]);
+    sModeBtns[v]=b; scoreModeRow.append(b);
+  });
+
+  // score sets
+  const scoreWrap=div({});
+  const buildScoreInputs=()=>{
+    scoreWrap.innerHTML="";
+    mSets.forEach((set,i)=>{
+      const myI=inp({className:"inp",placeholder:"自チーム",value:set.my,style:{width:"auto",flex:1}}); myI.type="number"; myI.addEventListener("input",e=>mSets[i].my=e.target.value);
+      const oppI=inp({className:"inp",placeholder:"相手",value:set.opp,style:{width:"auto",flex:1}}); oppI.type="number"; oppI.addEventListener("input",e=>mSets[i].opp=e.target.value);
+      const row=div({style:{display:"flex",gap:"8px",alignItems:"center",marginBottom:"8px"}},[
+        span({style:{fontSize:"12px",color:"var(--muted)",flexShrink:0}},[`第${i+1}セット`]),
+        myI,
+        span({style:{color:"var(--muted)"}},["-"]),
+        oppI,
+        i>0?btn({className:"btn btn-d sm",onClick:()=>{ mSets.splice(i,1); buildScoreInputs(); }},["×"]):"",
+      ]);
+      scoreWrap.append(row);
+    });
+    const addBtn=btn({className:"btn btn-g sm",onClick:()=>{ mSets.push({my:"",opp:""}); buildScoreInputs(); }},["＋ セット追加"]);
+    scoreWrap.append(addBtn);
+  };
+  buildScoreInputs();
+
+  const dateI=inp({className:"inp",type:"date",value:mDate}); dateI.addEventListener("input",e=>mDate=e.target.value);
+  const eventNameI=inp({className:"inp",placeholder:"大会名（例：○○大会）"}); eventNameI.addEventListener("input",e=>mEventName=e.target.value);
+  const eventNameWrap=div({style:{display:"none"}},[ff("大会名",eventNameI)]);
+  const oppNameI=inp({className:"inp",placeholder:"相手の名前"}); oppNameI.addEventListener("input",e=>mOpponentName=e.target.value);
+  const oppSchoolI=inp({className:"inp",placeholder:"相手の学校名"}); oppSchoolI.addEventListener("input",e=>mOpponentSchool=e.target.value);
+  const noteI=ta({className:"inp",rows:2},""); noteI.addEventListener("input",e=>mNote=e.target.value);
+
+  body.append(
+    ff("種別",typeRow),
+    eventNameWrap,
+    ff("カテゴリ",catRow),
+    ff("日付",dateI),
+    div({className:"grid2"},[ff("相手の名前",oppNameI),ff("相手の学校",oppSchoolI)]),
+    ff("結果",resRow),
+    ff("スコア入力方法",scoreModeRow),
+    scoreWrap,
+    ff("メモ（任意）",noteI),
+    errEl,
+  );
+
+  box.append(
+    mhdr(`🏸 試合を記録（${student.name}）`,()=>ov.remove()),
+    body,
+    mftr(()=>ov.remove(),async()=>{
+      if(!mDate)          return showErr(errEl,"日付を入力してください");
+      if(!mOpponentName.trim()) return showErr(errEl,"相手の名前を入力してください");
+      if(!mOpponentSchool.trim()) return showErr(errEl,"相手の学校名を入力してください");
+      const scores=mScoreMode==="score"?mSets.filter(s=>s.my||s.opp).map(s=>({my:Number(s.my)||0,opp:Number(s.opp)||0})):[];
+      const m={
+        id:genId(), studentId:student.id, studentName:student.name,
+        type:mType, category:mCategory, result:mResult,
+        date:mDate, eventName:mEventName,
+        opponentName:mOpponentName.trim(), opponentSchool:mOpponentSchool.trim(),
+        scores, note:mNote.trim(),
+        createdAt:new Date().toISOString(),
+      };
+      await DB.saveMatch(m);
+      S.matches.push(m);
+      ov.remove(); onSave();
+    },"記録する"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
 // ── Teacher: Settings ───────────────────────────────────────────────────────────
 function renderTSettings(root){
   root.innerHTML="";
@@ -846,19 +1092,14 @@ function renderTSettings(root){
 // ─── STUDENT APP ────────────────────────────────────────────────────────────────
 async function renderStudent(){
   showLoading("読み込み中...");
-  // 最新データをFirestoreから取得
   S.resp=await DB.getResps();
   S.items=await DB.getItems();
   S.students=await DB.getStudents();
+  S.matches=await DB.getMatches();
   clearAllCountdowns(); app.innerHTML="";
 
   const student=S.students.find(s=>s.id===S.sid);
   if(!student){ render(renderLogin); return; }
-
-  const gLabel={male:"男性",female:"女性",other:"その他"}[student.gender]||"";
-  const pending=S.items.filter(i=>!getResp(i.id,S.sid)&&!isExp(i.deadline));
-  const done   =S.items.filter(i=> getResp(i.id,S.sid));
-  const expired=S.items.filter(i=>!getResp(i.id,S.sid)&& isExp(i.deadline));
 
   const hdr=div({style:{background:"var(--navy-mid)",borderBottom:"1px solid var(--border)",padding:"12px 24px",display:"flex",alignItems:"center",gap:"12px"}},[
     span({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"22px",letterSpacing:"3px",color:"var(--accent)"}},[`${S.cfg.clubName||"部活"} UNIFORM`]),
@@ -873,9 +1114,34 @@ async function renderStudent(){
     ]),
   ]);
 
-  const main=div({style:{maxWidth:"760px",margin:"0 auto",padding:"24px"}});
-  if(S.cfg.greeting) main.append(div({style:{marginBottom:"20px",padding:"12px 16px",background:"rgba(74,158,255,.07)",borderRadius:"10px",border:"1px solid rgba(74,158,255,.2)",fontSize:"13px",lineHeight:1.7}},["📢 "+S.cfg.greeting]));
-  main.append(div({className:"card fi",style:{marginBottom:"24px",padding:"14px 20px",display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}},[
+  const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"24px"}});
+  const STABS=[["uniform","👕 ユニフォーム"],["matches","🏸 試合記録"]];
+  let sCurTab="uniform";
+  const sTabBar=div({className:"tabs",style:{marginBottom:"24px"}});
+  const sTabBtns={};
+  const sTabContent=div({});
+  const switchSTab=k=>{
+    sCurTab=k; STABS.forEach(([tk])=>sTabBtns[tk].className=`tab ${tk===k?"on":""}`);
+    sTabContent.innerHTML="";
+    if(k==="uniform") renderSUniform(sTabContent,student);
+    if(k==="matches") renderSMatches(sTabContent,student);
+  };
+  STABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===sCurTab?"on":""}`,onClick:()=>switchSTab(k)},[l]); sTabBtns[k]=b; sTabBar.append(b); });
+  switchSTab("uniform");
+  content.append(sTabBar,sTabContent);
+  app.append(hdr,content);
+}
+
+function renderSUniform(root,student){
+  root.innerHTML="";
+  const gLabel={male:"男性",female:"女性",other:"その他"}[student.gender]||"";
+  const pending=S.items.filter(i=>!getResp(i.id,student.id)&&!isExp(i.deadline));
+  const done   =S.items.filter(i=> getResp(i.id,student.id));
+  const expired=S.items.filter(i=>!getResp(i.id,student.id)&& isExp(i.deadline));
+  const rerender=()=>renderStudent();
+
+  if(S.cfg.greeting) root.append(div({style:{marginBottom:"20px",padding:"12px 16px",background:"rgba(74,158,255,.07)",borderRadius:"10px",border:"1px solid rgba(74,158,255,.2)",fontSize:"13px",lineHeight:1.7}},["📢 "+S.cfg.greeting]));
+  root.append(div({className:"card fi",style:{marginBottom:"24px",padding:"14px 20px",display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}},[
     div({style:{width:"44px",height:"44px",borderRadius:"50%",background:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",fontWeight:700,color:"#000",flexShrink:0}},[student.name[0]]),
     div({style:{flex:1}},[
       div({style:{fontWeight:700,fontSize:"15px"}},[student.name,span({style:{fontSize:"12px",color:"var(--muted)",fontWeight:400}},["（"+student.kana+"）"])]),
@@ -883,17 +1149,15 @@ async function renderStudent(){
     ]),
     div({style:{display:"flex",gap:"14px"}},[miniStat("未回答",pending.length,"var(--accent)"),miniStat("回答済",done.length,"var(--green)"),miniStat("期限切",expired.length,"var(--red)")]),
   ]));
-
-  const rerender=()=>renderStudent();
   if(pending.length>0){
-    main.append(secTitle("⏳ 回答が必要な項目",true));
-    pending.forEach(item=>main.append(makeSItemCard(item,student,rerender)));
+    root.append(secTitle("⏳ 回答が必要な項目",true));
+    pending.forEach(item=>root.append(makeSItemCard(item,student,rerender)));
   }
   if(done.length>0){
-    main.append(secTitle("✅ 回答済み",false));
+    root.append(secTitle("✅ 回答済み",false));
     done.forEach(item=>{
-      const r=getResp(item.id,S.sid);
-      main.append(div({className:"card",style:{display:"flex",gap:"14px",alignItems:"center",marginBottom:"10px"}},[
+      const r=getResp(item.id,student.id);
+      root.append(div({className:"card",style:{display:"flex",gap:"14px",alignItems:"center",marginBottom:"10px"}},[
         thumb(item,44),
         div({style:{flex:1}},[div({style:{fontWeight:600,fontSize:"14px"}},[item.name]),div({style:{fontSize:"12px",color:"var(--muted)"}},[`提出: ${fmtD(r.submittedAt)}`])]),
         div({style:{display:"flex",alignItems:"center",gap:"8px"}},[
@@ -904,15 +1168,77 @@ async function renderStudent(){
     });
   }
   if(expired.length>0){
-    main.append(secTitle("⛔ 締切済（未回答）",false));
-    expired.forEach(item=>main.append(div({className:"card",style:{opacity:.6,display:"flex",gap:"14px",alignItems:"center",marginBottom:"10px"}},[
+    root.append(secTitle("⛔ 締切済（未回答）",false));
+    expired.forEach(item=>root.append(div({className:"card",style:{opacity:.6,display:"flex",gap:"14px",alignItems:"center",marginBottom:"10px"}},[
       thumb(item,44),
       div({},[div({style:{fontWeight:600,fontSize:"14px"}},[item.name]),div({style:{fontSize:"12px",color:"var(--red)"}},[`締切: ${fmtD(item.deadline)}`])]),
       badge("b-0","期限切れ"),
     ])));
   }
-  if(!S.items.length) main.append(emptyState("🎽","現在、回答が必要な項目はありません"));
-  app.append(hdr,main);
+  if(!S.items.length) root.append(emptyState("🎽","現在、回答が必要な項目はありません"));
+}
+
+function renderSMatches(root,student){
+  root.innerHTML="";
+  let typeFilter="all";
+  const rebuild=()=>{
+    root.innerHTML="";
+    const allMatches=S.matches.sort((a,b)=>b.date.localeCompare(a.date));
+    const myMatches=allMatches.filter(m=>m.studentId===student.id);
+    const filtered=typeFilter==="all"?allMatches:allMatches.filter(m=>m.type===typeFilter);
+    const myFiltered=typeFilter==="all"?myMatches:myMatches.filter(m=>m.type===typeFilter);
+
+    const myWins=myFiltered.filter(m=>m.result==="win").length;
+    const myTotal=myFiltered.length;
+
+    // filter bar
+    const filterBar=div({style:{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}});
+    [["all","すべて"],["practice","練習試合"],["tournament","大会"]].forEach(([k,l])=>{
+      const b=btn({className:`sc ${typeFilter===k?"on":""}`,onClick:()=>{ typeFilter=k; rebuild(); }},[l]);
+      filterBar.append(b);
+    });
+
+    // my stats
+    const myStats=div({style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"12px",marginBottom:"20px"}},[
+      statCard("自分の試合数",myTotal,"var(--text)"),
+      statCard("勝ち",myWins,"var(--green)"),
+      statCard("勝率",myTotal?`${Math.round(myWins/myTotal*100)}%`:"—","var(--accent)"),
+    ]);
+
+    // my record button
+    const myBtn=btn({className:"btn btn-p",style:{marginBottom:"20px"},onClick:()=>openMatchModal(student,()=>{ renderStudent(); })},["＋ 試合を記録する"]);
+
+    // all members records table
+    const memberRows=[];
+    S.students.forEach(s=>{
+      const ms=filtered.filter(m=>m.studentId===s.id);
+      if(!ms.length)return;
+      const w=ms.filter(m=>m.result==="win").length;
+      const tr=el("tr",{style:{cursor:"pointer"}});
+      tr.addEventListener("click",()=>openMatchListModal(s,ms.slice(),()=>renderStudent()));
+      tr.append(
+        el("td",{style:{fontWeight:s.id===student.id?700:400}},[s.name+(s.id===student.id?" （自分）":"")]),
+        el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
+        el("td",{},[String(ms.length)]),
+        el("td",{style:{color:"var(--green)"}},[String(w)]),
+        el("td",{style:{color:"var(--red)"}},[String(ms.length-w)]),
+        el("td",{},[ms.length?`${Math.round(w/ms.length*100)}%`:"—"]),
+      );
+      memberRows.push(tr);
+    });
+
+    root.append(
+      filterBar,
+      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px"}},["📊 自分の成績"]),
+      myStats, myBtn,
+      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px"}},["👥 部員全員の記録"]),
+      memberRows.length?div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["氏名"]),el("th",{},["学年/組"]),el("th",{},["試合数"]),el("th",{},["勝"]),el("th",{},["負"]),el("th",{},["勝率"])])]),
+        el("tbody",{},memberRows),
+      ])]):emptyState("🏸","まだ記録がありません"),
+    );
+  };
+  rebuild();
 }
 
 function makeSItemCard(item,student,onUpdate){
