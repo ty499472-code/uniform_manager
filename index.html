@@ -520,7 +520,7 @@ function renderTeacher(){
     div({style:{marginLeft:"auto"}},[btn({className:"btn btn-g sm",onClick:()=>render(renderLogin)},["ログアウト"])]),
   ]);
   const content=div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
-  const TABS=[["items","📋 ユニフォーム"],["students","👥 生徒"],["overview","📊 集計"],["matches","🏸 試合記録"],["settings","⚙️ 設定"]];
+  const TABS=[["items","📋 ユニフォーム"],["students","👥 生徒"],["overview","📊 集計"],["matches","🏸 試合記録"],["attribute","🔥 属性診断"],["settings","⚙️ 設定"]];
   let curTab="items";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
@@ -528,11 +528,12 @@ function renderTeacher(){
   const switchTab=k=>{
     curTab=k; TABS.forEach(([tk])=>tabBtns[tk].className=`tab ${tk===k?"on":""}`);
     clearAllCountdowns(); tabContent.innerHTML="";
-    if(k==="items")    renderTItems(tabContent);
-    if(k==="students") renderTStudents(tabContent);
-    if(k==="overview") renderTOverview(tabContent);
-    if(k==="matches")  renderTMatches(tabContent);
-    if(k==="settings") renderTSettings(tabContent);
+    if(k==="items")     renderTItems(tabContent);
+    if(k==="students")  renderTStudents(tabContent);
+    if(k==="overview")  renderTOverview(tabContent);
+    if(k==="matches")   renderTMatches(tabContent);
+    if(k==="attribute") renderTAttribute(tabContent);
+    if(k==="settings")  renderTSettings(tabContent);
   };
   TABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===curTab?"on":""}`,onClick:()=>switchTab(k)},[l]); tabBtns[k]=b; tabBar.append(b); });
   switchTab("items");
@@ -1364,6 +1365,235 @@ function openStudentSettings(student,onUpdate){
     div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end"}},[btn({className:"btn btn-g",onClick:()=>ov.remove()},["閉じる"])]),
   );
   const ov=overlay(box,()=>ov.remove());
+}
+
+// ─── ATTRIBUTE DIAGNOSIS ────────────────────────────────────────────────────────
+const ATTR_QUESTIONS = [
+  { id:"q1", label:"1. 骨格と体型",
+    fire:"中肉中背、骨格は太くも細くもない",
+    earth:"ぽっちゃり肥満、骨格太い（肩幅広い）",
+    wind:"痩せている、骨格細い（肩幅狭くなで肩）" },
+  { id:"q2", label:"2. ボディバランス",
+    fire:"6.5頭身のほぼ基準値、バランスが良い",
+    earth:"首や手脚が短く見える、全体的に四角い印象",
+    wind:"高身長または低身長、手脚が細長い印象、アンバランス" },
+  { id:"q3", label:"3. 顔のバランス",
+    fire:"輪郭と目鼻のバランスが良い",
+    earth:"えらの張った四角い輪郭",
+    wind:"骨ばって細長い顔、受け口、小さい顎" },
+  { id:"q4", label:"4. 目",
+    fire:"鋭く印象的な目、目力が強い",
+    earth:"優しい印象",
+    wind:"小さく細い目、離れ気味／寄り気味" },
+  { id:"q5", label:"5. 鼻と耳",
+    fire:"通った鼻筋、耳の大きさは普通",
+    earth:"鼻が大きめ、福耳",
+    wind:"鼻が細くて小さい、耳も薄くて小さい" },
+  { id:"q6", label:"6. 歯",
+    fire:"やや黄色みがかっている、安定した歯並び",
+    earth:"白くて大きくきれいに整列した歯",
+    wind:"歯が小さく不揃い、歯茎が痩せて黒ずみがち" },
+  { id:"q7", label:"7. 肌質",
+    fire:"赤ら顔、赤ニキビ、汗っぽい、しみやほくろ、脂気がある",
+    earth:"潤いがあり色白だが、アレルギーが出やすい",
+    wind:"乾燥してくすみがち、黒ずみがち" },
+  { id:"q8", label:"8. 髪質／体毛",
+    fire:"細くて柔らかい猫毛、薄毛傾向／普通・一部に集中",
+    earth:"太くて毛量が多い／全体的に濃い",
+    wind:"くせ毛・縮れ毛が多い／まばらで薄い" },
+  { id:"q9", label:"9. 話し方",
+    fire:"大きく強い声、ハキハキと歯切れが良い",
+    earth:"ゆっくり、優しい口調",
+    wind:"早口、次々話が飛ぶ、口数が多い" },
+];
+
+const ATTR_COLOR = { fire:"#E84545", earth:"#C47D0A", wind:"#4A9EFF" };
+const ATTR_LABEL = { fire:"🔥 火", earth:"🌍 土", wind:"💨 風" };
+const ATTR_DESC  = {
+  fire:  "情熱的でエネルギッシュ。強い意志と行動力を持ち、競技でもリーダーシップを発揮しやすい。",
+  earth: "安定感があり忍耐強い。チームの縁の下の力持ちタイプ。コツコツ努力できる。",
+  wind:  "素早く柔軟な思考の持ち主。直感力や判断力が高く、テンポの速いプレーが得意。",
+};
+
+function renderTAttribute(root){
+  root.innerHTML="";
+  // 生徒選択 + 診断結果表示エリア
+  let selStudentId = S.students.length ? S.students[0].id : null;
+  let trialMode = false; // 生徒なしのお試し
+
+  const resultArea = div({});
+  const answers = {}; // qN -> "fire"|"earth"|"wind"|null
+
+  // 生徒セレクト
+  const studentSel = sel({className:"inp",style:{maxWidth:"260px"}},[
+    opt("__trial","── お試し（保存なし）──", !selStudentId),
+    ...S.students.map(s=>opt(s.id,`${s.name}（${s.grade}年${s.cls}組）`,s.id===selStudentId)),
+  ]);
+  studentSel.addEventListener("change",e=>{
+    const v=e.target.value;
+    trialMode = v==="__trial";
+    selStudentId = trialMode ? null : v;
+    // 保存済み診断を読み込む
+    Object.keys(answers).forEach(k=>delete answers[k]);
+    if(!trialMode){
+      const st=S.students.find(s=>s.id===selStudentId);
+      if(st?.attrAnswers) Object.assign(answers,st.attrAnswers);
+    }
+    buildDiag();
+  });
+
+  // 初期ロード：保存済み回答
+  if(selStudentId){
+    const st=S.students.find(s=>s.id===selStudentId);
+    if(st?.attrAnswers) Object.assign(answers,st.attrAnswers);
+  }
+
+  const buildDiag = () => {
+    resultArea.innerHTML="";
+
+    // 質問カード群
+    const qCards = ATTR_QUESTIONS.map(q=>{
+      const card=div({style:{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--r)",padding:"16px 20px",marginBottom:"10px"}});
+      const titleRow=div({style:{fontWeight:700,fontSize:"14px",marginBottom:"12px",color:"var(--accent)"}},[q.label]);
+      const optRow=div({style:{display:"flex",flexDirection:"column",gap:"8px"}});
+
+      [["fire",q.fire],["earth",q.earth],["wind",q.wind]].forEach(([attr,text])=>{
+        const sel_flag = answers[q.id]===attr;
+        const row=div({style:{
+          display:"flex",alignItems:"flex-start",gap:"12px",padding:"10px 14px",
+          borderRadius:"8px",border:`1.5px solid ${sel_flag?ATTR_COLOR[attr]:"var(--border)"}`,
+          background:sel_flag?`${ATTR_COLOR[attr]}18`:"transparent",
+          cursor:"pointer",transition:"all .18s",
+        }});
+        const dot=div({style:{
+          width:"18px",height:"18px",borderRadius:"50%",flexShrink:0,marginTop:"1px",
+          border:`2px solid ${ATTR_COLOR[attr]}`,
+          background:sel_flag?ATTR_COLOR[attr]:"transparent",
+          transition:"all .18s",
+        }});
+        const labelEl=div({style:{fontSize:"13px",lineHeight:1.6}},[
+          span({style:{fontSize:"11px",fontWeight:700,color:ATTR_COLOR[attr],marginRight:"6px"}},[ATTR_LABEL[attr]]),
+          text,
+        ]);
+        row.append(dot,labelEl);
+        row.addEventListener("click",()=>{
+          answers[q.id]=attr;
+          buildDiag();
+        });
+        row.addEventListener("mouseenter",()=>{ if(!sel_flag){ row.style.borderColor=ATTR_COLOR[attr]; row.style.background=`${ATTR_COLOR[attr]}0a`; } });
+        row.addEventListener("mouseleave",()=>{ if(!sel_flag){ row.style.borderColor="var(--border)"; row.style.background="transparent"; } });
+        optRow.append(row);
+      });
+      card.append(titleRow,optRow);
+      return card;
+    });
+
+    // 結果計算
+    const counts={fire:0,earth:0,wind:0};
+    Object.values(answers).forEach(v=>{ if(v) counts[v]++; });
+    const total=Object.values(counts).reduce((a,b)=>a+b,0);
+    const answered=total;
+    const pcts={
+      fire:  total?Math.round(counts.fire/total*100):0,
+      earth: total?Math.round(counts.earth/total*100):0,
+      wind:  total?Math.round(counts.wind/total*100):0,
+    };
+    const dominant=total?Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0]:null;
+
+    // 結果パネル
+    const resultPanel=div({style:{background:"var(--navy-mid)",border:"1px solid var(--border)",borderRadius:"var(--r)",padding:"20px",marginBottom:"20px"}});
+    if(total===0){
+      resultPanel.append(div({style:{color:"var(--muted)",fontSize:"13px",textAlign:"center",padding:"16px 0"}},["← 各項目を選択すると結果が表示されます"]));
+    } else {
+      // ドミナント表示
+      const domEl = dominant ? div({style:{textAlign:"center",marginBottom:"20px"}},[
+        div({style:{fontSize:"36px",marginBottom:"6px"}},[{fire:"🔥",earth:"🌍",wind:"💨"}[dominant]]),
+        div({style:{fontSize:"22px",fontWeight:900,color:ATTR_COLOR[dominant],fontFamily:"'Bebas Neue',sans-serif",letterSpacing:"2px"}},[ATTR_LABEL[dominant]+" タイプ"]),
+        div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"4px"}},[`（${answered}/9項目回答済み）`]),
+      ]) : "";
+
+      // バーグラフ
+      const bars=div({style:{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"16px"}});
+      ["fire","earth","wind"].forEach(attr=>{
+        const pct=pcts[attr];
+        const barWrap=div({style:{display:"flex",alignItems:"center",gap:"12px"}});
+        barWrap.append(
+          div({style:{width:"52px",fontSize:"12px",fontWeight:700,color:ATTR_COLOR[attr],flexShrink:0}},[ATTR_LABEL[attr]]),
+          div({style:{flex:1,height:"10px",background:"var(--navy-light)",borderRadius:"5px",overflow:"hidden"}},[
+            div({style:{height:"100%",width:`${pct}%`,background:ATTR_COLOR[attr],borderRadius:"5px",transition:"width .5s ease"}}),
+          ]),
+          div({style:{width:"40px",textAlign:"right",fontSize:"13px",fontWeight:700,color:ATTR_COLOR[attr]}},[`${pct}%`]),
+          div({style:{width:"28px",textAlign:"right",fontSize:"11px",color:"var(--muted)"}},[`${counts[attr]}票`]),
+        );
+        bars.append(barWrap);
+      });
+
+      // 説明
+      const descEl = dominant ? div({style:{fontSize:"13px",color:"var(--muted)",lineHeight:1.7,padding:"12px 14px",background:"var(--navy)",borderRadius:"8px",marginBottom:"16px"}},[ ATTR_DESC[dominant] ]) : "";
+
+      // 保存ボタン
+      const st=selStudentId?S.students.find(s=>s.id===selStudentId):null;
+      const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"12px",marginLeft:"8px"}},["✓ 保存しました"]);
+      const saveBtn = !trialMode && st ? btn({className:"btn btn-p sm",onClick:async()=>{
+        st.attrAnswers={...answers};
+        st.attrResult={counts,pcts,dominant,updatedAt:new Date().toISOString()};
+        await DB.saveStudent(st);
+        savedEl.className="";
+        setTimeout(()=>savedEl.className="hidden",2500);
+      }},["💾 診断結果を保存"]) : span({style:{fontSize:"12px",color:"var(--muted)"}},["※ お試しモードは保存されません"]);
+
+      resultPanel.append(domEl, bars, descEl,
+        div({style:{display:"flex",alignItems:"center",gap:"8px"}},[saveBtn,savedEl])
+      );
+    }
+
+    resultArea.append(resultPanel,...qCards);
+  };
+
+  // 既存の診断結果サマリー（生徒一覧）
+  const summaryRows=S.students.map(s=>{
+    if(!s.attrResult) return null;
+    const {dominant,pcts}=s.attrResult;
+    const tr=el("tr");
+    tr.append(
+      el("td",{style:{fontWeight:600}},[s.name]),
+      el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
+      el("td",{},[dominant?span({style:{fontWeight:700,color:ATTR_COLOR[dominant]}},[ATTR_LABEL[dominant]]):badge("b-0","未診断")]),
+      el("td",{},[dominant?div({style:{display:"flex",gap:"6px",alignItems:"center"}},[
+        ...["fire","earth","wind"].map(a=>
+          span({style:{fontSize:"11px",color:ATTR_COLOR[a]}},[`${ATTR_LABEL[a]}${pcts[a]}%`])
+        ),
+      ]):"—"]),
+    );
+    tr.addEventListener("click",()=>{
+      studentSel.value=s.id;
+      studentSel.dispatchEvent(new Event("change"));
+    });
+    return tr;
+  }).filter(Boolean);
+
+  root.append(
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px",flexWrap:"wrap",gap:"12px"}},[
+      div({style:{fontSize:"20px",fontWeight:700}},["🔥 属性診断"]),
+      div({style:{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}},[
+        label({className:"ff-label",style:{margin:0}},["対象："]),
+        studentSel,
+      ]),
+    ]),
+
+    // 診断済み一覧
+    summaryRows.length ? div({style:{marginBottom:"24px"}},[
+      div({style:{fontSize:"13px",fontWeight:700,color:"var(--muted)",marginBottom:"10px"}},["診断済み一覧（クリックで再診断）"]),
+      div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["氏名"]),el("th",{},["学年/組"]),el("th",{},["主属性"]),el("th",{},["割合"])])]),
+        el("tbody",{},summaryRows),
+      ])]),
+    ]) : "",
+
+    resultArea,
+  );
+
+  buildDiag();
 }
 
 // ─── Boot ───────────────────────────────────────────────────────────────────────
