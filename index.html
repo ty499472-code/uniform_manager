@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>清教学園バドミントン部 ユニフォーム管理</title>
+<title>清教学園バドミントン部 選手管理</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&family=Bebas+Neue&display=swap" rel="stylesheet"/>
 <style>
@@ -270,9 +270,9 @@ function renderLogin(){
   const name=S.cfg.clubName||"部活";
   const wrap=div({style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
   const logo=div({style:{marginBottom:"36px",textAlign:"center"}},[
-    div({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"48px",letterSpacing:"4px",color:"var(--accent)",lineHeight:1}},["UNIFORM"]),
+    div({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"48px",letterSpacing:"4px",color:"var(--accent)",lineHeight:1}},["PLAYER"]),
     div({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"48px",letterSpacing:"4px",color:"var(--text)",lineHeight:1}},["MANAGER"]),
-    div({style:{color:"var(--muted)",fontSize:"13px",marginTop:"8px"}},[`${name} ユニフォーム管理システム`]),
+    div({style:{color:"var(--muted)",fontSize:"13px",marginTop:"8px"}},[`${name} 選手管理システム`]),
   ]);
   const makeCard=(icon,title,sub,onClick)=>{
     const c=div({style:{width:"155px",padding:"26px 18px",borderRadius:"16px",border:"1.5px solid var(--border)",background:"var(--card)",cursor:"pointer",textAlign:"center",transition:"all .2s"}},[
@@ -287,7 +287,7 @@ function renderLogin(){
   };
   const cards=div({className:"fi",style:{display:"flex",gap:"16px",flexWrap:"wrap",justifyContent:"center"}},[
     makeCard("🏫","教員","管理者ログイン",()=>renderTeacherLogin()),
-    makeCard("👕","生徒","生徒ログイン",  ()=>renderStudentRouter()),
+    makeCard("👕","選手","選手ログイン",  ()=>renderStudentRouter()),
   ]);
   wrap.append(logo,cards);
   app.append(wrap);
@@ -317,7 +317,7 @@ function renderStudentRouter(){
   render(()=>{
     const wrap=div({style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
     const card=div({className:"card fi",style:{maxWidth:"400px",width:"100%",padding:"28px"}},[
-      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"6px"}},["👕 生徒ログイン"]),
+      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"6px"}},["👕 選手ログイン"]),
       div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"20px"}},["はじめての方は「新規登録」、登録済みの方は「ログイン」へ。"]),
       div({style:{display:"flex",flexDirection:"column",gap:"10px"}},[
         btn({className:"btn btn-p",style:{width:"100%",justifyContent:"center",padding:"13px 0",fontSize:"14px"},onClick:renderStudentReg},["✨ 新規登録（はじめての方）"]),
@@ -479,7 +479,7 @@ function renderStudentLogin(){
         // re-render card content
         card.innerHTML="";
         card.append(
-          div({style:{fontWeight:700,fontSize:"16px",marginBottom:"18px"}},["🔑 生徒ログイン"]),
+          div({style:{fontWeight:700,fontSize:"16px",marginBottom:"18px"}},["🔑 選手ログイン"]),
           div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
             div({className:"grid3"},[ff("学年",gradeS),ff("クラス",clsS),ff("出席番号",numI)]),
             findBtn, foundBox, pwWrap, errEl, loginBtn,
@@ -500,7 +500,7 @@ function renderStudentLogin(){
     pwWrap.append(ff("パスワード",pwI));
 
     const card=div({className:"card fi",style:{maxWidth:"400px",width:"100%",padding:"28px"}},[
-      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"18px"}},["🔑 生徒ログイン"]),
+      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"18px"}},["🔑 選手ログイン"]),
       div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
         div({className:"grid3"},[ff("学年",gradeS),ff("クラス",clsS),ff("出席番号",numI)]),
         findBtn, foundBox, pwWrap, errEl, loginBtn,
@@ -515,12 +515,12 @@ function renderStudentLogin(){
 function renderTeacher(){
   app.innerHTML="";
   const hdr=div({style:{background:"var(--navy-mid)",borderBottom:"1px solid var(--border)",padding:"12px 24px",display:"flex",alignItems:"center",gap:"12px"}},[
-    span({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"22px",letterSpacing:"3px",color:"var(--accent)"}},[`${S.cfg.clubName||"部活"} UNIFORM`]),
+    span({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"22px",letterSpacing:"3px",color:"var(--accent)"}},[`${S.cfg.clubName||"部活"} PLAYER`]),
     badge("b-y","教員"),
     div({style:{marginLeft:"auto"}},[btn({className:"btn btn-g sm",onClick:()=>render(renderLogin)},["ログアウト"])]),
   ]);
   const content=div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
-  const TABS=[["items","📋 ユニフォーム"],["students","👥 生徒"],["overview","📊 集計"],["matches","🏸 試合記録"],["attribute","🔥 属性診断"],["settings","⚙️ 設定"]];
+  const TABS=[["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["attribute","🔥 属性診断"],["settings","⚙️ 設定"]];
   let curTab="items";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
@@ -552,7 +552,7 @@ function renderTItems(root){
   };
   root.append(
     div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}},[
-      div({},[div({style:{fontSize:"20px",fontWeight:700}},["ユニフォーム項目"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.items.length}件`])]),
+      div({},[div({style:{fontSize:"20px",fontWeight:700}},["配布物・回答管理"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.items.length}件`])]),
       btn({className:"btn btn-p",onClick:()=>openItemModal(null,rebuild)},["＋ 新規追加"]),
     ]),
     list,
@@ -695,8 +695,8 @@ function renderTStudents(root){
     });
     root.append(
       div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}},[
-        div({},[div({style:{fontSize:"20px",fontWeight:700}},["生徒管理"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.students.length}名（登録済:${regCount}名）`])]),
-        btn({className:"btn btn-p",onClick:()=>openStudentModal(rebuild)},["＋ 生徒を追加"]),
+        div({},[div({style:{fontSize:"20px",fontWeight:700}},["選手管理"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.students.length}名（登録済:${regCount}名）`])]),
+        btn({className:"btn btn-p",onClick:()=>openStudentModal(rebuild)},["＋ 選手を追加"]),
       ]),
       div({className:"tw"},[el("table",{},[
         el("thead",{},[el("tr",{},[el("th",{},["出席No."]),el("th",{},["氏名/ふりがな"]),el("th",{},["学年/組"]),el("th",{},["生年月日"]),el("th",{},["登録"]),el("th",{},["回答"]),el("th",{})])]),
@@ -718,10 +718,10 @@ function openStudentModal(onSave){
   const clsS=sel({className:"inp"},[opt("","—",true),...CLS_OPTS.map(c=>opt(c,c+"組"))]); clsS.addEventListener("change",e=>form.cls=e.target.value);
   const numI=inp({className:"inp",placeholder:"01"}); numI.addEventListener("input",e=>form.number=e.target.value);
   box.append(
-    mhdr("生徒を追加（教員登録）",()=>ov.remove()),
+    mhdr("選手を追加（教員登録）",()=>ov.remove()),
     div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"13px"}},[
       div({style:{fontSize:"12px",color:"var(--muted)",padding:"10px 12px",background:"rgba(244,162,40,.06)",borderRadius:"8px",border:"1px solid rgba(244,162,40,.15)"}},[
-        "氏名・学年など基本情報を登録。生徒は新規登録時に学年・クラス・出席番号で照合されます。"]),
+        "氏名・学年など基本情報を登録。選手は新規登録時に学年・クラス・出席番号で照合されます。"]),
       div({className:"grid2"},[ff("氏名 *",nameI),ff("ふりがな",kanaI)]),
       ff("生年月日",dobI),ff("性別",genS),
       div({className:"grid3"},[ff("学年 *",gradeS),ff("クラス *",clsS),ff("出席番号 *",numI)]),
@@ -1103,8 +1103,8 @@ async function renderStudent(){
   if(!student){ render(renderLogin); return; }
 
   const hdr=div({style:{background:"var(--navy-mid)",borderBottom:"1px solid var(--border)",padding:"12px 24px",display:"flex",alignItems:"center",gap:"12px"}},[
-    span({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"22px",letterSpacing:"3px",color:"var(--accent)"}},[`${S.cfg.clubName||"部活"} UNIFORM`]),
-    badge("b-g","生徒"),
+    span({style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:"22px",letterSpacing:"3px",color:"var(--accent)"}},[`${S.cfg.clubName||"部活"} PLAYER`]),
+    badge("b-g","選手"),
     div({style:{marginLeft:"auto",display:"flex",alignItems:"center",gap:"10px"}},[
       div({style:{textAlign:"right"}},[
         div({style:{fontSize:"13px",fontWeight:700}},[student.name]),
@@ -1116,7 +1116,7 @@ async function renderStudent(){
   ]);
 
   const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"24px"}});
-  const STABS=[["uniform","👕 ユニフォーム"],["matches","🏸 試合記録"]];
+  const STABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"]];
   let sCurTab="uniform";
   const sTabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const sTabBtns={};
@@ -1409,10 +1409,77 @@ const ATTR_QUESTIONS = [
 
 const ATTR_COLOR = { fire:"#E84545", earth:"#C47D0A", wind:"#4A9EFF" };
 const ATTR_LABEL = { fire:"🔥 火", earth:"🌍 土", wind:"💨 風" };
-const ATTR_DESC  = {
-  fire:  "情熱的でエネルギッシュ。強い意志と行動力を持ち、競技でもリーダーシップを発揮しやすい。",
-  earth: "安定感があり忍耐強い。チームの縁の下の力持ちタイプ。コツコツ努力できる。",
-  wind:  "素早く柔軟な思考の持ち主。直感力や判断力が高く、テンポの速いプレーが得意。",
+
+// 各属性の詳細プロフィール
+const ATTR_PROFILE = {
+  fire: {
+    nature: "野心・集中力・自信・知識欲。情熱的・批判的・意志強固。怒り・攻撃性・競争心が強い。",
+    action: "リーダーシップ・計画性・競争志向。問題は解決しないと気が済まない。目が疲れやすく、時々下痢。いつも温かい・火照り。すぐ熱を出す。",
+    weakness: "イライラしやすく、攻撃性や批判的思考、パワハラになりがち。",
+    badminton: [
+      "🏸 攻撃的なスマッシュや積極的な前衛プレーが得意。試合での闘争心・集中力が武器。",
+      "⚠️ 熱くなりすぎてミスが増えやすい。ラリー中に冷静さを保つ呼吸を意識すること。",
+      "📈 戦術を事前に緻密に立てる練習が向いている。ライバルを設定すると伸びやすい。",
+    ],
+    club: [
+      "👑 部のキャプテン・副キャプテン向き。目標設定やチームを引っ張る役割が合う。",
+      "⚠️ 後輩への指導で厳しくなりすぎないよう注意。批判より提案の言葉を意識して。",
+      "💡 自分の意見を強く持つ半面、土・風タイプの意見も積極的に取り入れると組織が強くなる。",
+    ],
+    relation: [
+      "🤝 直接的でわかりやすいコミュニケーション。頼れる存在として信頼されやすい。",
+      "💬 土タイプとは目標・土台の役割分担が◎。風タイプとは意見がぶつかりやすいが補い合える。",
+      "❤️ 感謝や労いの言葉を意識的に伝えると、周囲との関係がぐっとよくなる。",
+    ],
+  },
+  earth: {
+    nature: "思いやり・信頼・忍耐・安定・現状満足。誠実・寛大・協調・連帯主義。温和・安定・無気力気味。",
+    action: "安定・依存・行動が遅い。のんびり。マイブームがよくある。よく寝る。太りやすい・むくみやすい。全体的に冷たい。",
+    weakness: "クヨクヨしやすく、倦怠感・やる気のなさ・執着心。",
+    badminton: [
+      "🏸 粘り強いラリーと安定したフットワークが強み。長期戦・体力勝負で光る。",
+      "📋 練習の継続力が高く、反復練習で着実にレベルアップできるタイプ。",
+      "⚠️ 試合序盤の立ち上がりが遅くなりがち。ウォームアップをしっかり行い、最初から動き出す意識を。",
+    ],
+    club: [
+      "🛡️ チームの縁の下の力持ち。雰囲気作りや後輩のサポート役として欠かせない存在。",
+      "📊 備品管理・記録係など、コツコツ取り組む役割が向いている。",
+      "⚠️ 変化や新しい取り組みへの抵抗感が出ることも。「まずやってみる」精神を意識して。",
+    ],
+    relation: [
+      "🤝 穏やかで受け入れ上手。誰とでも仲良くなれる調整役タイプ。",
+      "💬 火タイプのエネルギーをうまく受け止めてあげると関係がスムーズ。",
+      "❤️ 我慢しすぎる傾向があるので、自分の気持ちや意見も積極的に発信することが大切。",
+    ],
+  },
+  wind: {
+    nature: "創造性・自由・寛大・活力。順応性・快楽・個人主義。不安・緊張・変化（心変わり）しやすい。",
+    action: "不規則・無計画・自由・行動が速い。せっかちで早い。一つに集中できない。浅い眠りでよく夢を見る。",
+    weakness: "ソワソワ・せっかち・集中力低下・不安・優柔不断・モラハラ気味。",
+    badminton: [
+      "🏸 素早いフットワークとアイデア豊富なショット選択が武器。予測不能なプレーで相手を惑わせる。",
+      "⚡ 瞬間的な判断力・反射神経が優れており、速い展開のラリーに強い。",
+      "⚠️ 集中力が途切れやすいため、自分なりのルーティン（試合前の動作など）を作って集中スイッチを入れる習慣を。",
+    ],
+    club: [
+      "💡 新しいアイデアや練習メニューの提案役として活躍できる。",
+      "🎨 SNS・広報・デザインなどクリエイティブな役割が向いている。",
+      "⚠️ 飽きやすく途中で投げ出しがちな面も。土タイプのメンバーと組むと継続力を補い合える。",
+    ],
+    relation: [
+      "🤝 明るく社交的で、初対面でも打ち解けるのが早い。場の空気を読む能力が高い。",
+      "💬 気分の波が出やすいので、感情が不安定なときは一旦距離を置いて落ち着くのが◎。",
+      "❤️ 火タイプとはテンポが合いやすい。土タイプの安定感に助けられることが多い。",
+    ],
+  },
+};
+
+// 複数属性が混在するときの組み合わせアドバイス
+const ATTR_MIX_ADVICE = {
+  "fire+earth": "🔥🌍 火×土タイプ：行動力と忍耐力を兼ね備えた実力者。リーダーとしての推進力と、チームへの配慮が同居しています。焦りと慎重さのバランスを意識すると力が発揮されます。",
+  "fire+wind":  "🔥💨 火×風タイプ：エネルギッシュで創造的。次々とアイデアが湧き行動も速いが、やりすぎ・空回りに注意。土タイプのメンバーをうまく頼ることで成果が安定します。",
+  "earth+wind": "🌍💨 土×風タイプ：柔軟性と安定感を持ち、場の空気を読みながら動ける調整上手。ただし優柔不断になりやすいので、決断するときは思い切りも大切です。",
+  "fire+earth+wind": "🔥🌍💨 三属性混在タイプ：あらゆる状況に対応できる万能型。バランスがよい反面、軸がブレやすいので「今日の自分はどの属性が強いか」を意識すると安定します。",
 };
 
 function renderTAttribute(root){
@@ -1422,9 +1489,9 @@ function renderTAttribute(root){
   let trialMode = false; // 生徒なしのお試し
 
   const resultArea = div({});
-  const answers = {}; // qN -> "fire"|"earth"|"wind"|null
+  const answers = {}; // qN -> Set{"fire","earth","wind"} (複数選択可)
 
-  // 生徒セレクト
+  // 選手セレクト
   const studentSel = sel({className:"inp",style:{maxWidth:"260px"}},[
     opt("__trial","── お試し（保存なし）──", !selStudentId),
     ...S.students.map(s=>opt(s.id,`${s.name}（${s.grade}年${s.cls}組）`,s.id===selStudentId)),
@@ -1433,11 +1500,15 @@ function renderTAttribute(root){
     const v=e.target.value;
     trialMode = v==="__trial";
     selStudentId = trialMode ? null : v;
-    // 保存済み診断を読み込む
     Object.keys(answers).forEach(k=>delete answers[k]);
     if(!trialMode){
       const st=S.students.find(s=>s.id===selStudentId);
-      if(st?.attrAnswers) Object.assign(answers,st.attrAnswers);
+      if(st?.attrAnswers){
+        // 旧形式（文字列）→新形式（配列）変換
+        Object.entries(st.attrAnswers).forEach(([k,v])=>{
+          answers[k]=new Set(Array.isArray(v)?v:[v]);
+        });
+      }
     }
     buildDiag();
   });
@@ -1445,105 +1516,163 @@ function renderTAttribute(root){
   // 初期ロード：保存済み回答
   if(selStudentId){
     const st=S.students.find(s=>s.id===selStudentId);
-    if(st?.attrAnswers) Object.assign(answers,st.attrAnswers);
+    if(st?.attrAnswers){
+      Object.entries(st.attrAnswers).forEach(([k,v])=>{
+        answers[k]=new Set(Array.isArray(v)?v:[v]);
+      });
+    }
   }
 
   const buildDiag = () => {
     resultArea.innerHTML="";
 
-    // 質問カード群
+    // 質問カード群（複数選択対応）
     const qCards = ATTR_QUESTIONS.map(q=>{
       const card=div({style:{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--r)",padding:"16px 20px",marginBottom:"10px"}});
-      const titleRow=div({style:{fontWeight:700,fontSize:"14px",marginBottom:"12px",color:"var(--accent)"}},[q.label]);
+      const titleRow=div({style:{fontWeight:700,fontSize:"14px",marginBottom:"4px",color:"var(--accent)"}},[q.label]);
+      const hint=div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"10px"}},["複数選択可"]);
       const optRow=div({style:{display:"flex",flexDirection:"column",gap:"8px"}});
+      const selSet = answers[q.id] || new Set();
 
       [["fire",q.fire],["earth",q.earth],["wind",q.wind]].forEach(([attr,text])=>{
-        const sel_flag = answers[q.id]===attr;
+        const isOn = selSet.has(attr);
         const row=div({style:{
           display:"flex",alignItems:"flex-start",gap:"12px",padding:"10px 14px",
-          borderRadius:"8px",border:`1.5px solid ${sel_flag?ATTR_COLOR[attr]:"var(--border)"}`,
-          background:sel_flag?`${ATTR_COLOR[attr]}18`:"transparent",
+          borderRadius:"8px",border:`1.5px solid ${isOn?ATTR_COLOR[attr]:"var(--border)"}`,
+          background:isOn?`${ATTR_COLOR[attr]}18`:"transparent",
           cursor:"pointer",transition:"all .18s",
         }});
-        const dot=div({style:{
-          width:"18px",height:"18px",borderRadius:"50%",flexShrink:0,marginTop:"1px",
+        // チェックボックス風の四角いインジケーター
+        const chk=div({style:{
+          width:"18px",height:"18px",borderRadius:"4px",flexShrink:0,marginTop:"1px",
           border:`2px solid ${ATTR_COLOR[attr]}`,
-          background:sel_flag?ATTR_COLOR[attr]:"transparent",
-          transition:"all .18s",
-        }});
+          background:isOn?ATTR_COLOR[attr]:"transparent",
+          transition:"all .18s",display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:"11px",color:"#000",fontWeight:700,
+        }},[isOn?"✓":""]);
         const labelEl=div({style:{fontSize:"13px",lineHeight:1.6}},[
           span({style:{fontSize:"11px",fontWeight:700,color:ATTR_COLOR[attr],marginRight:"6px"}},[ATTR_LABEL[attr]]),
           text,
         ]);
-        row.append(dot,labelEl);
+        row.append(chk,labelEl);
         row.addEventListener("click",()=>{
-          answers[q.id]=attr;
+          if(!answers[q.id]) answers[q.id]=new Set();
+          if(answers[q.id].has(attr)) answers[q.id].delete(attr);
+          else answers[q.id].add(attr);
+          if(answers[q.id].size===0) delete answers[q.id];
           buildDiag();
         });
-        row.addEventListener("mouseenter",()=>{ if(!sel_flag){ row.style.borderColor=ATTR_COLOR[attr]; row.style.background=`${ATTR_COLOR[attr]}0a`; } });
-        row.addEventListener("mouseleave",()=>{ if(!sel_flag){ row.style.borderColor="var(--border)"; row.style.background="transparent"; } });
+        row.addEventListener("mouseenter",()=>{ if(!isOn){ row.style.borderColor=ATTR_COLOR[attr]; row.style.background=`${ATTR_COLOR[attr]}0a`; } });
+        row.addEventListener("mouseleave",()=>{ if(!isOn){ row.style.borderColor="var(--border)"; row.style.background="transparent"; } });
         optRow.append(row);
       });
-      card.append(titleRow,optRow);
+      card.append(titleRow,hint,optRow);
       return card;
     });
 
-    // 結果計算
+    // 結果計算（複数選択：各選択を等分で計上）
     const counts={fire:0,earth:0,wind:0};
-    Object.values(answers).forEach(v=>{ if(v) counts[v]++; });
-    const total=Object.values(counts).reduce((a,b)=>a+b,0);
-    const answered=total;
+    let totalWeight=0;
+    Object.values(answers).forEach(set=>{
+      if(!set||set.size===0)return;
+      const w=1/set.size; // 複数選択時は均等配分
+      set.forEach(attr=>{ counts[attr]+=w; totalWeight+=w; });
+    });
+    const answeredQ=Object.keys(answers).length;
     const pcts={
-      fire:  total?Math.round(counts.fire/total*100):0,
-      earth: total?Math.round(counts.earth/total*100):0,
-      wind:  total?Math.round(counts.wind/total*100):0,
+      fire:  totalWeight?Math.round(counts.fire/totalWeight*100):0,
+      earth: totalWeight?Math.round(counts.earth/totalWeight*100):0,
+      wind:  totalWeight?Math.round(counts.wind/totalWeight*100):0,
     };
-    const dominant=total?Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0]:null;
+    // 主属性（複数同率の場合は複数表示）
+    const maxCount=Math.max(...Object.values(counts));
+    const dominants=totalWeight?Object.entries(counts).filter(([,v])=>v===maxCount).map(([k])=>k):[];
 
     // 結果パネル
     const resultPanel=div({style:{background:"var(--navy-mid)",border:"1px solid var(--border)",borderRadius:"var(--r)",padding:"20px",marginBottom:"20px"}});
-    if(total===0){
+    if(totalWeight===0){
       resultPanel.append(div({style:{color:"var(--muted)",fontSize:"13px",textAlign:"center",padding:"16px 0"}},["← 各項目を選択すると結果が表示されます"]));
     } else {
-      // ドミナント表示
-      const domEl = dominant ? div({style:{textAlign:"center",marginBottom:"20px"}},[
-        div({style:{fontSize:"36px",marginBottom:"6px"}},[{fire:"🔥",earth:"🌍",wind:"💨"}[dominant]]),
-        div({style:{fontSize:"22px",fontWeight:900,color:ATTR_COLOR[dominant],fontFamily:"'Bebas Neue',sans-serif",letterSpacing:"2px"}},[ATTR_LABEL[dominant]+" タイプ"]),
-        div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"4px"}},[`（${answered}/9項目回答済み）`]),
-      ]) : "";
+      // ドミナント表示（複数対応）
+      const icons={fire:"🔥",earth:"🌍",wind:"💨"};
+      const domEl=div({style:{textAlign:"center",marginBottom:"20px"}},[
+        div({style:{fontSize:"32px",marginBottom:"6px"}},[dominants.map(d=>icons[d]).join(" ")]),
+        div({style:{fontSize:"20px",fontWeight:900,fontFamily:"'Bebas Neue',sans-serif",letterSpacing:"2px",display:"flex",gap:"10px",justifyContent:"center",flexWrap:"wrap"}},[
+          ...dominants.map(d=>span({style:{color:ATTR_COLOR[d]}},[ATTR_LABEL[d]]))
+        ]),
+        div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},[`（${answeredQ}/9項目回答済み）`]),
+      ]);
 
       // バーグラフ
       const bars=div({style:{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"16px"}});
       ["fire","earth","wind"].forEach(attr=>{
         const pct=pcts[attr];
-        const barWrap=div({style:{display:"flex",alignItems:"center",gap:"12px"}});
-        barWrap.append(
+        bars.append(div({style:{display:"flex",alignItems:"center",gap:"12px"}},[
           div({style:{width:"52px",fontSize:"12px",fontWeight:700,color:ATTR_COLOR[attr],flexShrink:0}},[ATTR_LABEL[attr]]),
           div({style:{flex:1,height:"10px",background:"var(--navy-light)",borderRadius:"5px",overflow:"hidden"}},[
             div({style:{height:"100%",width:`${pct}%`,background:ATTR_COLOR[attr],borderRadius:"5px",transition:"width .5s ease"}}),
           ]),
           div({style:{width:"40px",textAlign:"right",fontSize:"13px",fontWeight:700,color:ATTR_COLOR[attr]}},[`${pct}%`]),
-          div({style:{width:"28px",textAlign:"right",fontSize:"11px",color:"var(--muted)"}},[`${counts[attr]}票`]),
-        );
-        bars.append(barWrap);
+        ]));
       });
 
-      // 説明
-      const descEl = dominant ? div({style:{fontSize:"13px",color:"var(--muted)",lineHeight:1.7,padding:"12px 14px",background:"var(--navy)",borderRadius:"8px",marginBottom:"16px"}},[ ATTR_DESC[dominant] ]) : "";
+      // 主属性の詳細カード（複数の場合は全部表示）
+      const profileCards = div({style:{display:"flex",flexDirection:"column",gap:"12px",marginBottom:"16px"}});
+      dominants.forEach(d=>{
+        const p=ATTR_PROFILE[d];
+        const sections=[
+          ["🧬 性質・特徴", p.nature],
+          ["⚡ 行動・体の特徴", p.action],
+          ["⚠️ 弱点", p.weakness],
+        ];
+        const secEls=sections.map(([title,text])=>
+          div({style:{marginBottom:"8px"}},[
+            div({style:{fontSize:"11px",fontWeight:700,color:"var(--muted)",marginBottom:"3px"}},[title]),
+            div({style:{fontSize:"13px",lineHeight:1.7,color:"var(--text)"}},[text]),
+          ])
+        );
+
+        const makeAdviceBlock=(title,items)=>div({style:{marginTop:"10px"}},[
+          div({style:{fontSize:"11px",fontWeight:700,color:ATTR_COLOR[d],marginBottom:"6px"}},[title]),
+          ...items.map(t=>div({style:{fontSize:"13px",lineHeight:1.7,padding:"6px 10px",background:"var(--navy)",borderRadius:"6px",marginBottom:"4px"}},[t])),
+        ]);
+
+        profileCards.append(div({style:{
+          background:"var(--card)",border:`1.5px solid ${ATTR_COLOR[d]}40`,
+          borderLeft:`4px solid ${ATTR_COLOR[d]}`,
+          borderRadius:"var(--r)",padding:"16px 18px",
+        }},[
+          div({style:{fontWeight:900,fontSize:"18px",color:ATTR_COLOR[d],fontFamily:"'Bebas Neue',sans-serif",letterSpacing:"2px",marginBottom:"12px"}},[ {fire:"🔥 火のヒト",earth:"🌍 土のヒト",wind:"💨 風のヒト"}[d] ]),
+          ...secEls,
+          makeAdviceBlock("🏸 バドミントンでの活かし方", p.badminton),
+          makeAdviceBlock("🎽 部活での役割・立ち回り", p.club),
+          makeAdviceBlock("🤝 人間関係・チームメイトとの関わり方", p.relation),
+        ]));
+      });
+
+      // 複数属性の組み合わせアドバイス
+      const mixKey = [...dominants].sort().join("+");
+      const mixAdvice = ATTR_MIX_ADVICE[mixKey];
+      const mixEl = mixAdvice && dominants.length>1 ? div({style:{
+        padding:"14px 16px",background:"rgba(255,255,255,0.04)",borderRadius:"8px",
+        border:"1px solid var(--border)",fontSize:"13px",lineHeight:1.7,marginBottom:"16px",
+      }},[mixAdvice]) : "";
 
       // 保存ボタン
       const st=selStudentId?S.students.find(s=>s.id===selStudentId):null;
       const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"12px",marginLeft:"8px"}},["✓ 保存しました"]);
       const saveBtn = !trialMode && st ? btn({className:"btn btn-p sm",onClick:async()=>{
-        st.attrAnswers={...answers};
-        st.attrResult={counts,pcts,dominant,updatedAt:new Date().toISOString()};
+        const serialized={};
+        Object.entries(answers).forEach(([k,v])=>{ serialized[k]=[...v]; });
+        st.attrAnswers=serialized;
+        st.attrResult={counts:{fire:Math.round(counts.fire*10)/10,earth:Math.round(counts.earth*10)/10,wind:Math.round(counts.wind*10)/10},pcts,dominants,updatedAt:new Date().toISOString()};
         await DB.saveStudent(st);
         savedEl.className="";
         setTimeout(()=>savedEl.className="hidden",2500);
       }},["💾 診断結果を保存"]) : span({style:{fontSize:"12px",color:"var(--muted)"}},["※ お試しモードは保存されません"]);
 
-      resultPanel.append(domEl, bars, descEl,
-        div({style:{display:"flex",alignItems:"center",gap:"8px"}},[saveBtn,savedEl])
+      resultPanel.append(domEl, bars, mixEl, profileCards,
+        div({style:{display:"flex",alignItems:"center",gap:"8px",borderTop:"1px solid var(--border)",paddingTop:"14px",marginTop:"4px"}},[saveBtn,savedEl])
       );
     }
 
@@ -1553,16 +1682,15 @@ function renderTAttribute(root){
   // 既存の診断結果サマリー（生徒一覧）
   const summaryRows=S.students.map(s=>{
     if(!s.attrResult) return null;
-    const {dominant,pcts}=s.attrResult;
+    const {dominants,pcts}=s.attrResult;
+    const doms=dominants||[];
     const tr=el("tr");
     tr.append(
       el("td",{style:{fontWeight:600}},[s.name]),
       el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
-      el("td",{},[dominant?span({style:{fontWeight:700,color:ATTR_COLOR[dominant]}},[ATTR_LABEL[dominant]]):badge("b-0","未診断")]),
-      el("td",{},[dominant?div({style:{display:"flex",gap:"6px",alignItems:"center"}},[
-        ...["fire","earth","wind"].map(a=>
-          span({style:{fontSize:"11px",color:ATTR_COLOR[a]}},[`${ATTR_LABEL[a]}${pcts[a]}%`])
-        ),
+      el("td",{},[doms.length?div({style:{display:"flex",gap:"4px",flexWrap:"wrap"}},doms.map(d=>span({style:{fontWeight:700,color:ATTR_COLOR[d]}},[ATTR_LABEL[d]]))):badge("b-0","未診断")]),
+      el("td",{},[pcts?div({style:{display:"flex",gap:"8px",alignItems:"center"}},[
+        ...["fire","earth","wind"].map(a=>span({style:{fontSize:"11px",color:ATTR_COLOR[a]}},[`${ATTR_LABEL[a]}${pcts[a]}%`]))
       ]):"—"]),
     );
     tr.addEventListener("click",()=>{
