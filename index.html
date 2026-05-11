@@ -677,8 +677,14 @@ function renderTItems(root){
 
 function makeItemCard(item,onUpdate){
   const expired=isExp(item.deadline);
-  const done=Object.keys(getItemResp(item.id)).length;
-  const total=S.students.length;
+  // 対象選手だけを分母にする
+  const targetedStudents=S.students.filter(s=>{
+    const gradeOk=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+    const genderOk=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+    return gradeOk&&genderOk;
+  });
+  const done=targetedStudents.filter(s=>getResp(item.id,s.id)).length;
+  const total=targetedStudents.length;
   const pct=total?Math.round(done/total*100):0;
   const detailRow=div({className:"hidden si",style:{marginTop:"16px",paddingTop:"16px",borderTop:"1px solid var(--border)"}});
   let expanded=false;
@@ -724,7 +730,12 @@ function makeItemCard(item,onUpdate){
 }
 
 function makeTItemDetail(item){
-  const rows=S.students.map(s=>{
+  const targetedStudents=S.students.filter(s=>{
+    const gradeOk=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+    const genderOk=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+    return gradeOk&&genderOk;
+  });
+  const rows=targetedStudents.map(s=>{
     const r=getResp(item.id,s.id);
     const tr=el("tr");
     tr.append(el("td",{},[s.name]),el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
@@ -1159,10 +1170,16 @@ function renderTOverview(root){
   const rebuild=()=>{
     content.innerHTML="";
     const item=S.items.find(i=>i.id===selId); if(!item)return;
+    // 対象選手でフィルタ
+    const targeted=S.students.filter(s=>{
+      const gradeOk=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+      const genderOk=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+      return gradeOk&&genderOk;
+    });
     const sc={};
     Object.values(getItemResp(item.id)).forEach(r=>{ sc[r.size]=(sc[r.size]||0)+1; });
-    const ans=S.students.filter(s=>getResp(item.id,s.id));
-    const un=S.students.filter(s=>!getResp(item.id,s.id));
+    const ans=targeted.filter(s=>getResp(item.id,s.id));
+    const un=targeted.filter(s=>!getResp(item.id,s.id));
     content.append(
       div({style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"16px",marginBottom:"20px"}},[
         div({className:"card"},[
@@ -1182,7 +1199,7 @@ function renderTOverview(root){
       ]),
       div({className:"tw"},[el("table",{},[
         el("thead",{},[el("tr",{},[el("th",{},["氏名"]),el("th",{},["学年/組"]),el("th",{},["サイズ"]),el("th",{},["提出日時"])])]),
-        el("tbody",{},S.students.map(s=>{
+        el("tbody",{},targeted.map(s=>{
           const r=getResp(item.id,s.id);
           const tr=el("tr");
           tr.append(el("td",{style:{fontWeight:600}},[s.name]),el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
