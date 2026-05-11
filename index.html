@@ -98,14 +98,10 @@ tr:hover td{background:var(--card-h)}
   </div>
 </div>
 
-<script type="module">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
 // ─── Firebase ──────────────────────────────────────────────────────────────────
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import {
-  getFirestore, doc, getDoc, setDoc, collection,
-  getDocs, deleteDoc, onSnapshot, writeBatch
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
 const firebaseConfig = {
   apiKey: "AIzaSyB6TbrWqu2CAzggiCqzcvr06mwnDOdEZk4",
   authDomain: "seikyobadomintonmanager.firebaseapp.com",
@@ -114,8 +110,16 @@ const firebaseConfig = {
   messagingSenderId: "86245954924",
   appId: "1:86245954924:web:2eed89af19e5af4afb4f49"
 };
-const firebase = initializeApp(firebaseConfig);
-const db = getFirestore(firebase);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// compat版のラッパー関数（DB helperがESM版と同じ書き方で動くように）
+const doc        = (database, col, id) => database.collection(col).doc(id);
+const collection = (database, col)     => database.collection(col);
+const getDoc     = async ref           => { const s=await ref.get(); return { exists:()=>s.exists, data:()=>s.data(), id:s.id }; };
+const getDocs    = async ref           => { const s=await ref.get(); return { docs: s.docs.map(d=>({ id:d.id, data:()=>d.data() })) }; };
+const setDoc     = (ref, data)         => ref.set(data);
+const deleteDoc  = ref                 => ref.delete();
 
 // ─── DB helpers ────────────────────────────────────────────────────────────────
 const DEF_CFG = { clubName:"清教学園バドミントン部", teacherPw:"teacher123", greeting:"" };
@@ -149,6 +153,31 @@ const DB = {
   },
   async saveTournament(t){ await setDoc(doc(db,"tournaments",t.id),t); },
   async deleteTournament(id){ await deleteDoc(doc(db,"tournaments",id)); },
+  // チャットルーム管理
+  async getChatRooms(){
+    try{ const s=await getDocs(collection(db,"chat_rooms")); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)); }catch{ return []; }
+  },
+  async saveChatRoom(r){ await setDoc(doc(db,"chat_rooms",r.id),r); },
+  async deleteChatRoom(id){ await deleteDoc(doc(db,"chat_rooms",id)); },
+  // チャット
+  async getChatMessages(roomId){
+    try{
+      const s=await getDocs(collection(db,`chat_${roomId}`));
+      return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
+    }catch{ return []; }
+  },
+  async sendChatMessage(roomId,msg){ await setDoc(doc(db,`chat_${roomId}`,msg.id),msg); },
+  async deleteChatMessage(roomId,msgId){ await deleteDoc(doc(db,`chat_${roomId}`,msgId)); },
+  // 既読管理
+  async markRead(userId,roomId){ await setDoc(doc(db,"chat_read",`${userId}_${roomId}`),{lastRead:new Date().toISOString()}); },
+  async getReadMarks(userId){
+    try{
+      const s=await getDocs(collection(db,"chat_read"));
+      const r={};
+      s.docs.filter(d=>d.id.startsWith(userId+"_")).forEach(d=>{ r[d.id.slice(userId.length+1)]=d.data().lastRead; });
+      return r;
+    }catch{ return {}; }
+  },
 };
 
 // ─── Utils ─────────────────────────────────────────────────────────────────────
@@ -160,14 +189,33 @@ const fmtDs = d => d ? new Date(d).toLocaleDateString("ja-JP") : "—";
 const isExp = d => d && new Date(d) < now();
 const hp    = s => btoa(encodeURIComponent(s+"uf2024"));
 
+// 画像を最大800px・JPEG品質0.7に圧縮してBase64で返す
+function compressImage(file, callback){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=800;
+      let w=img.width, h=img.height;
+      if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} }
+      const canvas=document.createElement("canvas");
+      canvas.width=w; canvas.height=h;
+      canvas.getContext("2d").drawImage(img,0,0,w,h);
+      callback(canvas.toDataURL("image/jpeg",0.72));
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 // ─── App State ─────────────────────────────────────────────────────────────────
-const S = { cfg:DEF_CFG, students:[], items:[], resp:{}, matches:[], tournaments:[], role:null, sid:null };
+const S = { cfg:DEF_CFG, students:[], items:[], resp:{}, matches:[], tournaments:[], chatRooms:[], readMarks:{}, role:null, sid:null };
 
 async function loadAll(){
-  const [cfg, students, items, resp, matches, tournaments] = await Promise.all([
-    DB.getCfg(), DB.getStudents(), DB.getItems(), DB.getResps(), DB.getMatches(), DB.getTournaments()
+  const [cfg, students, items, resp, matches, tournaments, chatRooms] = await Promise.all([
+    DB.getCfg(), DB.getStudents(), DB.getItems(), DB.getResps(), DB.getMatches(), DB.getTournaments(), DB.getChatRooms()
   ]);
-  S.cfg=cfg; S.students=students; S.items=items; S.resp=resp; S.matches=matches; S.tournaments=tournaments;
+  S.cfg=cfg; S.students=students; S.items=items; S.resp=resp; S.matches=matches; S.tournaments=tournaments; S.chatRooms=chatRooms;
 }
 
 const findStudent = (grade,cls,number) =>
@@ -329,170 +377,74 @@ function renderTeacherLogin(){
 function renderStudentRouter(){
   render(()=>{
     const wrap=div({style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
-    const card=div({className:"card fi",style:{maxWidth:"400px",width:"100%",padding:"28px"}},[
-      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"6px"}},["👕 選手ログイン"]),
-      div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"20px"}},["はじめての方は「新規登録」、登録済みの方は「ログイン」へ。"]),
-      div({style:{display:"flex",flexDirection:"column",gap:"10px"}},[
-        btn({className:"btn btn-p",style:{width:"100%",justifyContent:"center",padding:"13px 0",fontSize:"14px"},onClick:renderStudentReg},["✨ 新規登録（はじめての方）"]),
-        btn({className:"btn btn-g",style:{width:"100%",justifyContent:"center",padding:"13px 0",fontSize:"14px"},onClick:renderStudentLogin},["🔑 ログイン（登録済みの方）"]),
-      ]),
-      btn({className:"btn btn-g sm",style:{marginTop:"16px",width:"100%",justifyContent:"center"},onClick:()=>render(renderLogin)},["← 戻る"]),
-    ]);
-    wrap.append(card); app.append(wrap);
+    // 全選手が統一フローなので直接ログイン画面へ
+    renderStudentUnified(wrap);
+    app.append(wrap);
   });
 }
 
-// ─── STUDENT REGISTRATION ───────────────────────────────────────────────────────
-function renderStudentReg(){
-  render(()=>{
-    const wrap=div({style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
-    const card=div({style:{maxWidth:"480px",width:"100%",background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--r)",overflow:"hidden"}});
-    let step=1, pw="", pw2="";
-    const form={name:"",kana:"",dob:"",gender:"",grade:"",cls:"",number:""};
-    const hdr=div({style:{padding:"18px 24px",background:"var(--navy)",borderBottom:"1px solid var(--border)"}});
-    const body=div({style:{padding:"24px"}});
-    const ftr=div({style:{padding:"16px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px"}});
-    card.append(hdr,body,ftr);
+// ─── 統一ログイン・初回登録フロー ─────────────────────────────────────────────────
+// Step 1: 学年選択 → 名前選択
+// Step 2: 生年月日の月・日で本人確認
+// Step 3A: 未登録 → パスワード設定（初回）
+// Step 3B: 登録済 → パスワード入力（通常ログイン）
+function renderStudentUnified(wrap){
+  wrap.innerHTML="";
+  const card=div({style:{maxWidth:"420px",width:"100%",background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--r)",overflow:"hidden"}});
+  wrap.append(card);
 
-    const rebuildHdr=()=>{ hdr.innerHTML=""; hdr.append(div({style:{fontWeight:700,fontSize:"15px",marginBottom:"14px"}},["✨ 新規登録"]),stepBar(["プロフィール入力","パスワード設定"],step)); };
+  let step=1, found=null, pw="", pw2="";
 
-    let genderVal="";
-    const buildStep1=()=>{
-      body.innerHTML=""; const errEl=div({className:"hidden"});
-      const nameI=inp({className:"inp",placeholder:"田中 花子",value:form.name}); nameI.addEventListener("input",e=>form.name=e.target.value);
-      const kanaI=inp({className:"inp",placeholder:"たなか はなこ",value:form.kana}); kanaI.addEventListener("input",e=>form.kana=e.target.value);
-      const dobI=inp({className:"inp",type:"date",value:form.dob}); dobI.addEventListener("input",e=>form.dob=e.target.value);
-      const gBtns=[];
-      const gRow=div({style:{display:"flex",gap:"8px"}});
-      [["male","男性"],["female","女性"],["other","その他/回答しない"]].forEach(([v,l])=>{
-        const b=btn({className:`sc ${genderVal===v?"on":""}`,style:{flex:1,justifyContent:"center"}},[l]);
-        b.addEventListener("click",()=>{ genderVal=v; form.gender=v; gBtns.forEach(x=>x.classList.toggle("on",x===b)); });
-        gBtns.push(b); gRow.append(b);
-      });
-      const gradeS=sel({className:"inp"},[opt("","—",!form.grade),...["1","2","3"].map(g=>opt(g,g+"年",g===form.grade))]); gradeS.addEventListener("change",e=>form.grade=e.target.value);
-      const clsS=sel({className:"inp"},[opt("","—",!form.cls),...CLS_OPTS.map(c=>opt(c,c+"組",c===form.cls))]); clsS.addEventListener("change",e=>form.cls=e.target.value);
-      const numI=inp({className:"inp",placeholder:"01",value:form.number}); numI.addEventListener("input",e=>form.number=e.target.value);
-      body.append(div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
-        div({className:"grid2"},[ff("氏名 *",nameI),ff("ふりがな *",kanaI)]),
-        ff("生年月日 *",dobI), ff("性別 *",gRow),
-        div({style:{height:"1px",background:"var(--border)"}}),
-        div({className:"grid3"},[ff("学年 *",gradeS),ff("クラス *",clsS),ff("出席番号 *",numI)]),
-        errEl,
-      ]));
-      ftr.innerHTML="";
-      ftr.append(
-        btn({className:"btn btn-g",onClick:renderStudentRouter},["← 戻る"]),
-        div({style:{flex:1}}),
-        btn({className:"btn btn-p",onClick:()=>{
-          if(!form.name.trim())   return showErr(errEl,"氏名を入力してください");
-          if(!form.kana.trim())   return showErr(errEl,"ふりがなを入力してください");
-          if(!form.dob)           return showErr(errEl,"生年月日を入力してください");
-          if(!form.gender)        return showErr(errEl,"性別を選択してください");
-          if(!form.grade)         return showErr(errEl,"学年を選択してください");
-          if(!form.cls)           return showErr(errEl,"クラスを選択してください");
-          if(!form.number.trim()) return showErr(errEl,"出席番号を入力してください");
-          const dup=findStudent(form.grade,form.cls,form.number.trim());
-          if(dup&&dup.registered) return showErr(errEl,"この学年・クラス・出席番号はすでに登録済みです。「ログイン」をお使いください。");
-          step=2; rebuildHdr(); buildStep2();
-        }},["次へ →"]),
-      );
-    };
+  const hdr=div({style:{padding:"16px 24px",background:"var(--navy)",borderBottom:"1px solid var(--border)"}});
+  const body=div({style:{padding:"24px"}});
+  const ftr=div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px"}});
+  card.append(hdr,body,ftr);
 
-    const buildStep2=()=>{
-      body.innerHTML=""; const errEl=div({className:"hidden"});
-      const pwI=inp({className:"inp",type:"password",placeholder:"••••••••"}); pwI.addEventListener("input",e=>pw=e.target.value);
-      const pw2I=inp({className:"inp",type:"password",placeholder:"••••••••"}); pw2I.addEventListener("input",e=>pw2=e.target.value);
-      body.append(div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
-        div({style:{padding:"14px",background:"rgba(46,204,113,.07)",borderRadius:"8px",border:"1px solid rgba(46,204,113,.2)"}},[
-          div({style:{fontWeight:700,fontSize:"14px"}},[form.name]),
-          div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},[`${form.kana} · ${form.grade}年${form.cls}組 · No.${form.number}`]),
-        ]),
-        ff("パスワード（6文字以上）*",pwI),
-        ff("パスワード（確認）*",pw2I),
-        errEl,
-      ]));
-      pw2I.addEventListener("keydown",e=>{ if(e.key==="Enter") doFinish(errEl); });
-      ftr.innerHTML="";
-      ftr.append(
-        btn({className:"btn btn-g",onClick:()=>{ step=1; rebuildHdr(); buildStep1(); }},["← 戻る"]),
-        div({style:{flex:1}}),
-        btn({className:"btn btn-p",onClick:()=>doFinish(errEl)},["登録してログイン ✓"]),
-      );
-    };
+  const rebuildHdr=()=>{
+    hdr.innerHTML="";
+    const steps=found?.registered?["選手選択","生年月日確認","パスワード"]:["選手選択","生年月日確認","PW設定"];
+    hdr.append(
+      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px"}},["👕 選手ログイン"]),
+      stepBar(steps,step),
+    );
+  };
 
-    const doFinish=async(errEl)=>{
-      if(pw.length<6)  return showErr(errEl,"パスワードは6文字以上で設定してください");
-      if(pw!==pw2)     return showErr(errEl,"パスワードが一致しません");
-      showLoading("登録中...");
-      try{
-        const existing=findStudent(form.grade,form.cls,form.number.trim());
-        let id;
-        if(existing){
-          id=existing.id;
-          const updated={...existing,...form,number:String(form.number.trim()),passwordHash:hp(pw),registered:true};
-          await DB.saveStudent(updated);
-          const idx=S.students.findIndex(s=>s.id===id);
-          if(idx>=0) S.students[idx]=updated; else S.students.push(updated);
-        } else {
-          id=genId();
-          const newS={...form,id,number:String(form.number.trim()),passwordHash:hp(pw),registered:true};
-          await DB.saveStudent(newS);
-          S.students.push(newS);
-        }
-        S.role="student"; S.sid=id;
-        render(renderStudent);
-      }catch(e){ render(()=>{ renderStudentReg(); showErr(errEl,"登録に失敗しました: "+e.message); }); }
-    };
-
-    rebuildHdr(); buildStep1();
-    wrap.append(card); app.append(wrap);
-  });
-}
-
-// ─── STUDENT LOGIN ──────────────────────────────────────────────────────────────
-function renderStudentLogin(){
-  render(()=>{
-    const wrap=div({style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:"radial-gradient(ellipse at 30% 20%,#1a2d45,#0D1B2A 65%)"}});
+  // ── Step 1: 学年 → 名前 ──
+  const buildStep1=()=>{
+    body.innerHTML=""; ftr.innerHTML="";
     const errEl=div({className:"hidden"});
-    let found=null, pw="", gradeV="";
+    let gradeV="", selectedStudent=null;
 
-    const pwWrap=div({className:"hidden"});
-    const pwI=inp({className:"inp",type:"password",placeholder:"パスワードを入力"});
-    pwI.addEventListener("input",e=>pw=e.target.value);
-    pwWrap.append(ff("パスワード",pwI));
-
-    // 名前リスト（学年選択後に動的生成）
-    const nameWrap=div({className:"hidden"});
-
-    const resetFound=()=>{ found=null; pwWrap.className="hidden"; errEl.className="hidden"; pw=""; pwI.value=""; };
-
-    // 学年セレクト → 名前リスト動的更新
-    const grades=[...new Set(S.students.filter(s=>s.registered).map(s=>s.grade))].sort();
+    const grades=[...new Set(S.students.map(s=>s.grade))].sort();
     const gradeS=sel({className:"inp"},[
       opt("","— 学年を選択 —",true),
       ...grades.map(g=>opt(g,`${g}年`)),
     ]);
+
+    const nameWrap=div({className:"hidden"});
     gradeS.addEventListener("change",e=>{
       gradeV=e.target.value;
-      resetFound();
+      selectedStudent=null;
       nameWrap.innerHTML="";
+      ftr.innerHTML="";
       if(!gradeV){ nameWrap.className="hidden"; return; }
 
-      const byGrade=S.students.filter(s=>s.registered&&s.grade===gradeV)
-        .sort((a,b)=>Number(a.number)-Number(b.number));
+      const byGrade=S.students.filter(s=>s.grade===gradeV)
+        .sort((a,b)=>a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number));
 
       if(!byGrade.length){
         nameWrap.className="";
-        nameWrap.append(div({style:{fontSize:"13px",color:"var(--muted)",padding:"8px 12px",background:"var(--navy-light)",borderRadius:"8px"}},["この学年の登録済み選手はいません"]));
+        nameWrap.append(div({style:{fontSize:"13px",color:"var(--muted)",padding:"10px",background:"var(--navy-light)",borderRadius:"8px"}},["この学年の選手はいません"]));
         return;
       }
 
-      // 名前ボタン一覧
-      const nameList=div({style:{display:"flex",flexDirection:"column",gap:"8px"}});
+      nameWrap.className="";
+      const nameList=div({style:{display:"flex",flexDirection:"column",gap:"6px",maxHeight:"260px",overflowY:"auto"}});
+
       byGrade.forEach(s=>{
         const b=div({style:{
           padding:"10px 14px",borderRadius:"8px",border:"1.5px solid var(--border)",
-          cursor:"pointer",transition:"all .18s",display:"flex",justifyContent:"space-between",alignItems:"center",
+          cursor:"pointer",transition:"all .15s",display:"flex",justifyContent:"space-between",alignItems:"center",
         }},[
           div({},[
             div({style:{fontWeight:700,fontSize:"14px"}},[s.name]),
@@ -500,73 +452,179 @@ function renderStudentLogin(){
           ]),
           span({style:{color:"var(--accent)",fontSize:"18px"}},["›"]),
         ]);
-        b.addEventListener("mouseenter",()=>{ if(!found) { b.style.borderColor="var(--accent)"; b.style.background="rgba(244,162,40,.06)"; } });
-        b.addEventListener("mouseleave",()=>{ if(!found) { b.style.borderColor=""; b.style.background=""; } });
+        b.addEventListener("mouseenter",()=>{ if(selectedStudent!==s){ b.style.borderColor="var(--accent)"; b.style.background="rgba(244,162,40,.06)"; } });
+        b.addEventListener("mouseleave",()=>{ if(selectedStudent!==s){ b.style.borderColor=""; b.style.background=""; } });
         b.addEventListener("click",()=>{
-          found=s;
+          selectedStudent=s;
           errEl.className="hidden";
-          // 選択した1人だけ表示、他は非表示
-          Array.from(nameList.children).forEach(x=>{
-            if(x===b){
-              x.style.borderColor="var(--accent)";
-              x.style.background="rgba(244,162,40,.12)";
-              x.style.display="flex";
-            } else {
-              x.style.display="none";
-            }
-          });
-          // 「変更」リンクを追加（まだなければ）
-          if(!nameList.querySelector(".change-btn")){
-            const changeBtn=div({className:"change-btn",style:{fontSize:"12px",color:"var(--accent)",cursor:"pointer",textAlign:"right",marginTop:"4px"}},[" 別の選手を選ぶ"]);
-            changeBtn.addEventListener("click",()=>{
-              found=null; pw=""; pwI.value="";
-              pwWrap.className="hidden";
-              errEl.className="hidden";
-              // 全カード再表示
-              Array.from(nameList.children).forEach(x=>{
-                if(x.classList.contains("change-btn")) return;
-                x.style.display="flex";
-                x.style.borderColor="";
-                x.style.background="";
-              });
-              changeBtn.remove();
+          // 選択した1人だけ表示
+          Array.from(nameList.children).forEach(x=>{ x.style.display="none"; });
+          b.style.display="flex"; b.style.borderColor="var(--accent)"; b.style.background="rgba(244,162,40,.12)";
+          // 「変更」リンク
+          if(!nameList.querySelector(".chg")){ 
+            const chg=div({className:"chg",style:{fontSize:"12px",color:"var(--accent)",cursor:"pointer",textAlign:"right",marginTop:"4px",padding:"2px 0"}},["↩ 別の選手を選ぶ"]);
+            chg.addEventListener("click",()=>{
+              selectedStudent=null;
+              Array.from(nameList.children).forEach(x=>{ x.style.display="flex"; x.style.borderColor=""; x.style.background=""; });
+              chg.remove(); buildNextBtn();
             });
-            nameList.append(changeBtn);
+            nameList.append(chg);
           }
-          pwWrap.className="";
-          setTimeout(()=>pwI.focus(),50);
+          buildNextBtn();
         });
         nameList.append(b);
       });
-      nameWrap.className="";
-      nameWrap.innerHTML="";
       nameWrap.append(ff("選手を選択",nameList));
+
+      const buildNextBtn=()=>{
+        ftr.innerHTML="";
+        ftr.append(
+          btn({className:"btn btn-g",onClick:()=>render(renderLogin)},["← 戻る"]),
+          div({style:{flex:1}}),
+          btn({className:"btn btn-p",disabled:!selectedStudent,onClick:()=>{
+            if(!selectedStudent) return;
+            found=selectedStudent;
+            step=2; rebuildHdr(); buildStep2();
+          }},["次へ →"]),
+        );
+      };
     });
 
-    const doLogin=async()=>{
-      if(!found) return showErr(errEl,"選手を選択してください");
-      if(found.passwordHash!==hp(pw)) return showErr(errEl,"パスワードが違います");
+    body.append(div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
+      ff("学年",gradeS), nameWrap, errEl,
+    ]));
+    ftr.append(
+      btn({className:"btn btn-g",onClick:()=>render(renderLogin)},["← 戻る"]),
+      div({style:{flex:1}}),
+    );
+  };
+
+  // ── Step 2: 生年月日（月・日）で本人確認 ──
+  const buildStep2=()=>{
+    body.innerHTML=""; ftr.innerHTML="";
+    const errEl=div({className:"hidden"});
+
+    // 選手情報表示
+    const infoBox=div({style:{padding:"12px 14px",background:"rgba(74,158,255,.08)",borderRadius:"8px",border:"1px solid rgba(74,158,255,.2)",marginBottom:"4px"}},[
+      div({style:{fontWeight:700,fontSize:"14px"}},[found.name]),
+      div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[`${found.grade}年${found.cls}組 No.${found.number}`]),
+    ]);
+
+    // 月・日セレクト
+    const months=Array.from({length:12},(_,i)=>i+1);
+    const days=Array.from({length:31},(_,i)=>i+1);
+    let selMonth="", selDay="";
+
+    const mS=sel({className:"inp"},[opt("","— 月 —",true),...months.map(m=>opt(String(m),`${m}月`))]);
+    const dS=sel({className:"inp"},[opt("","— 日 —",true),...days.map(d=>opt(String(d),`${d}日`))]);
+    mS.addEventListener("change",e=>selMonth=e.target.value);
+    dS.addEventListener("change",e=>selDay=e.target.value);
+
+    body.append(div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
+      infoBox,
+      div({style:{fontSize:"13px",color:"var(--muted)"}},[`生年月日の月と日を入力して本人確認を行います。`]),
+      div({style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}},[ff("月",mS),ff("日",dS)]),
+      errEl,
+    ]));
+
+    ftr.append(
+      btn({className:"btn btn-g",onClick:()=>{ step=1; found=null; rebuildHdr(); buildStep1(); }},["← 戻る"]),
+      div({style:{flex:1}}),
+      btn({className:"btn btn-p",onClick:()=>{
+        if(!selMonth||!selDay) return showErr(errEl,"月と日を選択してください");
+        if(!found.dob) return showErr(errEl,"生年月日が登録されていません。教員に確認してください。");
+        // 生年月日の月・日を照合
+        const dobDate=new Date(found.dob);
+        const dobMonth=String(dobDate.getMonth()+1);
+        const dobDay=String(dobDate.getDate());
+        if(selMonth!==dobMonth||selDay!==dobDay) return showErr(errEl,"生年月日が一致しません");
+        step=3; rebuildHdr();
+        // 登録済みかどうかで分岐
+        if(found.registered) buildStep3Login();
+        else buildStep3SetPw();
+      }},["確認 →"]),
+    );
+  };
+
+  // ── Step 3A: 通常ログイン（登録済み）──
+  const buildStep3Login=()=>{
+    body.innerHTML=""; ftr.innerHTML="";
+    const errEl=div({className:"hidden"});
+    const pwI=inp({className:"inp",type:"password",placeholder:"パスワードを入力"});
+    pwI.addEventListener("input",e=>pw=e.target.value);
+    pwI.addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(errEl); });
+
+    body.append(div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
+      div({style:{padding:"12px 14px",background:"rgba(46,204,113,.07)",borderRadius:"8px",border:"1px solid rgba(46,204,113,.2)"}},[
+        div({style:{fontWeight:700,fontSize:"14px"}},[found.name]),
+        div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[`本人確認OK ✓`]),
+      ]),
+      ff("パスワード",pwI),
+      errEl,
+    ]));
+    setTimeout(()=>pwI.focus(),50);
+    ftr.append(
+      btn({className:"btn btn-g",onClick:()=>{ step=2; rebuildHdr(); buildStep2(); }},["← 戻る"]),
+      div({style:{flex:1}}),
+      btn({className:"btn btn-p",onClick:()=>doLogin(errEl)},["ログイン"]),
+    );
+  };
+
+  const doLogin=async(errEl)=>{
+    if(found.passwordHash!==hp(pw)) return showErr(errEl,"パスワードが違います");
+    S.role="student"; S.sid=found.id;
+    render(renderStudent);
+  };
+
+  // ── Step 3B: 初回パスワード設定（未登録）──
+  const buildStep3SetPw=()=>{
+    body.innerHTML=""; ftr.innerHTML="";
+    const errEl=div({className:"hidden"});
+    const pwI=inp({className:"inp",type:"password",placeholder:"パスワードを設定（6文字以上）"});
+    const pw2I=inp({className:"inp",type:"password",placeholder:"確認のためもう一度"});
+    pwI.addEventListener("input",e=>pw=e.target.value);
+    pw2I.addEventListener("input",e=>pw2=e.target.value);
+    pw2I.addEventListener("keydown",e=>{ if(e.key==="Enter") doSetPw(errEl); });
+
+    body.append(div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
+      div({style:{padding:"12px 14px",background:"rgba(244,162,40,.08)",borderRadius:"8px",border:"1px solid rgba(244,162,40,.2)"}},[
+        div({style:{fontWeight:700,fontSize:"14px"}},[found.name]),
+        div({style:{fontSize:"12px",color:"var(--accent)",marginTop:"2px"}},["初回ログイン：パスワードを設定してください"]),
+      ]),
+      ff("パスワード（6文字以上）*",pwI),
+      ff("パスワード（確認）*",pw2I),
+      errEl,
+    ]));
+    setTimeout(()=>pwI.focus(),50);
+    ftr.append(
+      btn({className:"btn btn-g",onClick:()=>{ step=2; rebuildHdr(); buildStep2(); }},["← 戻る"]),
+      div({style:{flex:1}}),
+      btn({className:"btn btn-p",onClick:()=>doSetPw(errEl)},["登録してログイン ✓"]),
+    );
+  };
+
+  const doSetPw=async(errEl)=>{
+    if(pw.length<6)  return showErr(errEl,"パスワードは6文字以上で設定してください");
+    if(pw!==pw2)     return showErr(errEl,"パスワードが一致しません");
+    showLoading("登録中...");
+    try{
+      const updated={...found,passwordHash:hp(pw),registered:true};
+      await DB.saveStudent(updated);
+      const idx=S.students.findIndex(s=>s.id===found.id);
+      if(idx>=0) S.students[idx]=updated; else S.students.push(updated);
       S.role="student"; S.sid=found.id;
       render(renderStudent);
-    };
-    const loginBtn=btn({className:"btn btn-p",style:{width:"100%",justifyContent:"center"},onClick:doLogin},["ログイン"]);
-    pwI.addEventListener("keydown",e=>e.key==="Enter"&&doLogin());
+    }catch(e){
+      render(()=>{ renderStudentUnified(wrap); });
+    }
+  };
 
-    const card=div({className:"card fi",style:{maxWidth:"400px",width:"100%",padding:"28px"}},[
-      div({style:{fontWeight:700,fontSize:"16px",marginBottom:"18px"}},["🔑 選手ログイン"]),
-      div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
-        ff("学年",gradeS),
-        nameWrap,
-        pwWrap,
-        errEl,
-        loginBtn,
-        btn({className:"btn btn-g sm",style:{width:"100%",justifyContent:"center"},onClick:renderStudentRouter},["← 戻る"]),
-      ]),
-    ]);
-    wrap.append(card); app.append(wrap);
-  });
+  rebuildHdr(); buildStep1();
 }
 
+// ─── STUDENT LOGIN（後方互換：routerから呼ばれる場合）──────────────────────────────
+function renderStudentReg(){ renderStudentRouter(); }
+function renderStudentLogin(){ renderStudentRouter(); }
 // ─── TEACHER APP ────────────────────────────────────────────────────────────────
 function renderTeacher(){
   app.innerHTML="";
@@ -576,7 +634,7 @@ function renderTeacher(){
     div({style:{marginLeft:"auto"}},[btn({className:"btn btn-g sm",onClick:()=>render(renderLogin)},["ログアウト"])]),
   ]);
   const content=div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
-  const TABS=[["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["attribute","🔥 属性診断"],["settings","⚙️ 設定"]];
+  const TABS=[["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["settings","⚙️ 設定"]];
   let curTab="items";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
@@ -588,6 +646,7 @@ function renderTeacher(){
     if(k==="students")  renderTStudents(tabContent);
     if(k==="overview")  renderTOverview(tabContent);
     if(k==="matches")   renderTMatches(tabContent);
+    if(k==="chat")      renderChat(tabContent,"__teacher__","教員",true);
     if(k==="attribute") renderTAttribute(tabContent);
     if(k==="settings")  renderTSettings(tabContent);
   };
@@ -641,6 +700,11 @@ function makeItemCard(item,onUpdate){
       div({style:{fontSize:"12px",color:"var(--muted)",display:"flex",gap:"14px",flexWrap:"wrap"}},[
         span({},[cdEl]),span({},[`📅 ${fmtD(item.deadline)}`]),span({},[`✅ ${done}/${total}名`]),
       ]),
+      // 対象学年・性別表示
+      item.targetGrades||item.targetGenders?div({style:{marginTop:"6px",display:"flex",gap:"6px",flexWrap:"wrap"}},[
+        ...(item.targetGrades&&item.targetGrades.length<3?item.targetGrades.map(g=>badge("b-b",`${g}年`)):[]),
+        ...(item.targetGenders&&item.targetGenders.length<3?item.targetGenders.map(g=>badge("b-0",{male:"男性",female:"女性",other:"その他"}[g]||g)):[]),
+      ]):"",
       div({style:{marginTop:"8px"}},[div({className:"pb"},[div({className:"pf",style:{width:`${pct}%`}})])]),
     ]),
     div({style:{display:"flex",gap:"6px",flexShrink:0}},[
@@ -678,6 +742,13 @@ function openItemModal(item,onSave){
   const isE=!!item;
   let name=item?.name||"",desc=item?.description||"",sizesStr=item?.sizes?.join(", ")||"XS, S, M, L, XL, XXL";
   let dlVal=item?.deadline?item.deadline.slice(0,16):"",required=item?.required??false,imageUrl=item?.imageUrl||null;
+  const availGrades=[...new Set(S.students.map(s=>s.grade))].sort();
+  const allGrades=availGrades.length?availGrades:["1","2","3"];
+  const allGenderVals=["male","female","other"];
+  // 対象フィルター（新規時はデフォルト全選択）
+  let targetGrades=new Set(item?.targetGrades?.length?item.targetGrades:allGrades);
+  let targetGenders=new Set(item?.targetGenders?.length?item.targetGenders:allGenderVals);
+
   const box=div({className:"mb"}); const errEl=div({className:"hidden"});
   const imgPrev=div({style:{minHeight:"80px",display:"flex",alignItems:"center",justifyContent:"center"}});
   const fileI=inp({type:"file",accept:"image/*",style:{display:"none"}});
@@ -689,21 +760,57 @@ function openItemModal(item,onSave){
   };
   rebPrev();
   uzDiv.addEventListener("click",()=>fileI.click());
-  fileI.addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>{imageUrl=ev.target.result;rebPrev();}; r.readAsDataURL(f); });
+  fileI.addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; compressImage(f,img=>{imageUrl=img;rebPrev();}); });
   uzDiv.addEventListener("dragover",e=>{e.preventDefault();uzDiv.classList.add("dg");});
   uzDiv.addEventListener("dragleave",()=>uzDiv.classList.remove("dg"));
-  uzDiv.addEventListener("drop",e=>{e.preventDefault();uzDiv.classList.remove("dg");const f=e.dataTransfer.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{imageUrl=ev.target.result;rebPrev();};r.readAsDataURL(f);});
+  uzDiv.addEventListener("drop",e=>{e.preventDefault();uzDiv.classList.remove("dg");const f=e.dataTransfer.files[0];if(!f)return;compressImage(f,img=>{imageUrl=img;rebPrev();});});
   const delBtn=btn({className:"btn btn-g sm",style:{marginTop:"8px",display:imageUrl?"inline-flex":"none"},onClick:()=>{imageUrl=null;rebPrev();delBtn.style.display="none";}},["画像を削除"]);
   const nameI=inp({className:"inp",value:name,placeholder:"ゲームシャツ（半袖）"}); nameI.addEventListener("input",e=>name=e.target.value);
   const descI=ta({className:"inp",rows:2},desc); descI.addEventListener("input",e=>desc=e.target.value);
   const sizI=inp({className:"inp",value:sizesStr}); sizI.addEventListener("input",e=>sizesStr=e.target.value);
   const dlI=inp({className:"inp",type:"datetime-local",value:dlVal}); dlI.addEventListener("input",e=>dlVal=e.target.value);
   const reqChk=inp({type:"checkbox",checked:required,style:{width:"16px",height:"16px",accentColor:"var(--accent)"}}); reqChk.addEventListener("change",e=>required=e.target.checked);
+
+  // 対象学年チェックボックス
+  const gradeRow=div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}});
+  allGrades.forEach(g=>{
+    const on=targetGrades.has(g);
+    const b=btn({className:`sc ${on?"on":""}`,onClick:()=>{
+      if(targetGrades.has(g)) targetGrades.delete(g); else targetGrades.add(g);
+      b.classList.toggle("on",targetGrades.has(g));
+    }},[`${g}年`]);
+    gradeRow.append(b);
+  });
+  // 全学年ボタン
+  const allGradeBtn=btn({className:"btn btn-g sm",onClick:()=>{
+    allGrades.forEach(g=>targetGrades.add(g));
+    gradeRow.querySelectorAll(".sc").forEach(b=>b.classList.add("on"));
+  }},["全学年"]);
+  gradeRow.append(allGradeBtn);
+
+  // 対象性別チェックボックス
+  const genderRow=div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}});
+  [["male","男性"],["female","女性"],["other","その他"]].forEach(([v,l])=>{
+    const on=targetGenders.has(v);
+    const b=btn({className:`sc ${on?"on":""}`,onClick:()=>{
+      if(targetGenders.has(v)) targetGenders.delete(v); else targetGenders.add(v);
+      b.classList.toggle("on",targetGenders.has(v));
+    }},[l]);
+    genderRow.append(b);
+  });
+  const allGenderBtn=btn({className:"btn btn-g sm",onClick:()=>{
+    ["male","female","other"].forEach(v=>targetGenders.add(v));
+    genderRow.querySelectorAll(".sc").forEach(b=>b.classList.add("on"));
+  }},["全員"]);
+  genderRow.append(allGenderBtn);
+
   box.append(
     mhdr(isE?"項目を編集":"新規項目を追加",()=>ov.remove()),
     div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
       ff("見本画像",div({},[uzDiv,delBtn])),
       ff("項目名 *",nameI),ff("説明",descI),ff("サイズ選択肢（カンマ区切り）*",sizI),ff("締切日時 *",dlI),
+      ff("対象学年（複数選択可）",gradeRow),
+      ff("対象性別（複数選択可）",genderRow),
       label({style:{display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",fontSize:"13px"}},[reqChk," 必須項目にする"]),
       errEl,
     ]),
@@ -711,7 +818,9 @@ function openItemModal(item,onSave){
       if(!name.trim()||!dlVal) return showErr(errEl,"名前と締切日を入力してください");
       const sl=sizesStr.split(/[,、\s]+/).map(s=>s.trim()).filter(Boolean);
       if(!sl.length) return showErr(errEl,"サイズを入力してください");
-      const data={name:name.trim(),description:desc.trim(),sizes:sl,deadline:new Date(dlVal).toISOString(),required,imageUrl};
+      const data={name:name.trim(),description:desc.trim(),sizes:sl,deadline:new Date(dlVal).toISOString(),required,imageUrl,
+        targetGrades:targetGrades.size?[...targetGrades]:allGrades,
+        targetGenders:targetGenders.size?[...targetGenders]:allGenderVals};
       if(isE){ Object.assign(item,data); await DB.saveItem(item); }
       else { const newItem={...data,id:genId(),createdAt:new Date().toISOString()}; S.items.push(newItem); await DB.saveItem(newItem); }
       ov.remove(); onSave();
@@ -726,41 +835,251 @@ function renderTStudents(root){
     root.innerHTML="";
     S.students=await DB.getStudents();
     const regCount=S.students.filter(s=>s.registered).length;
-    const rows=S.students.map(s=>{
-      const ans=S.items.filter(i=>getResp(i.id,s.id)).length;
-      const tr=el("tr");
-      tr.append(
-        el("td",{style:{color:"var(--muted)"}},[s.number]),
-        el("td",{},[div({style:{fontWeight:600}},[s.name]),div({style:{fontSize:"11px",color:"var(--muted)"}},[s.kana||""])]),
-        el("td",{style:{color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
-        el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[fmtDs(s.dob)]),
-        el("td",{},[s.registered?badge("b-g","✓ 済"):badge("b-y","未")]),
-        el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
-        el("td",{style:{display:"flex",gap:"6px",flexWrap:"wrap",padding:"8px 14px"}},[
-          s.registered?btn({className:"btn btn-b sm",onClick:()=>openPwModal(s,rebuild)},["🔑 PW"]):
-            span({style:{fontSize:"12px",color:"var(--muted)",lineHeight:"28px"}},["未登録"]),
-          btn({className:"btn btn-d sm",onClick:async()=>{
-            if(!confirm(`${s.name}を削除しますか？`))return;
-            await DB.deleteStudent(s.id);
-            S.students=S.students.filter(x=>x.id!==s.id);
-            rebuild();
-          }},["削除"]),
-        ]),
-      );
-      return tr;
-    });
+
+    // 学年ごとにグループ化
+    const grades=[...new Set(S.students.map(s=>s.grade))].sort();
+    const byGrade={};
+    grades.forEach(g=>{ byGrade[g]=S.students.filter(s=>s.grade===g).sort((a,b)=>a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number)); });
+
     root.append(
-      div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}},[
-        div({},[div({style:{fontSize:"20px",fontWeight:700}},["選手管理"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.students.length}名（登録済:${regCount}名）`])]),
-        btn({className:"btn btn-p",onClick:()=>openStudentModal(rebuild)},["＋ 選手を追加"]),
+      div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}},[
+        div({},[
+          div({style:{fontSize:"20px",fontWeight:700}},["選手管理"]),
+          div({style:{color:"var(--muted)",fontSize:"13px"}},[`計${S.students.length}名（登録済:${regCount}名）`]),
+        ]),
+        div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
+          btn({className:"btn btn-g",onClick:()=>openCsvImport(rebuild)},["📂 CSVインポート"]),
+          btn({className:"btn btn-p",onClick:()=>openStudentModal(rebuild)},["＋ 選手を追加"]),
+        ]),
       ]),
-      div({className:"tw"},[el("table",{},[
-        el("thead",{},[el("tr",{},[el("th",{},["出席No."]),el("th",{},["氏名/ふりがな"]),el("th",{},["学年/組"]),el("th",{},["生年月日"]),el("th",{},["登録"]),el("th",{},["回答"]),el("th",{})])]),
-        el("tbody",{},rows.length?rows:[el("tr",{},[el("td",{colSpan:7,style:{textAlign:"center",color:"var(--muted)",padding:"32px"}},["生徒が登録されていません"])])]),
-      ])]),
     );
+
+    if(!S.students.length){
+      root.append(emptyState("👥","選手が登録されていません"));
+      return;
+    }
+
+    grades.forEach(g=>{
+      const students=byGrade[g];
+      const regC=students.filter(s=>s.registered).length;
+      let open=false; // デフォルト折り畳み
+
+      // ブロックヘッダー
+      const blockHdr=div({style:{
+        display:"flex",alignItems:"center",gap:"12px",
+        padding:"10px 16px",borderRadius:"10px 10px 0 0",
+        background:"var(--navy-mid)",border:"1px solid var(--border)",
+        cursor:"pointer",userSelect:"none",
+      }});
+      const arrow=span({style:{color:"var(--accent)",fontSize:"16px",transition:"transform .2s",transform:"rotate(-90deg)"}},["▼"]);
+      blockHdr.append(
+        div({style:{fontWeight:700,fontSize:"15px"}},[`${g}年生`]),
+        div({style:{fontSize:"12px",color:"var(--muted)"}},[`${students.length}名`]),
+        badge("b-g",`登録済 ${regC}名`),
+        badge("b-y",`未登録 ${students.length-regC}名`),
+        div({style:{marginLeft:"auto"}},[arrow]),
+      );
+
+      // テーブル
+      const rows=students.map(s=>{
+        const ans=S.items.filter(i=>getResp(i.id,s.id)).length;
+        const tr=el("tr");
+        tr.append(
+          el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[`${s.cls}組 ${s.number}番`]),
+          el("td",{},[
+            div({style:{fontWeight:600}},[s.name]),
+            div({style:{fontSize:"11px",color:"var(--muted)"}},[s.kana||""]),
+          ]),
+          el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[fmtDs(s.dob)]),
+          el("td",{},[s.registered?badge("b-g","✓ 済"):badge("b-y","未")]),
+          el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
+          el("td",{style:{display:"flex",gap:"5px",flexWrap:"wrap",padding:"8px 14px"}},[
+            s.registered
+              ? btn({className:"btn btn-b sm",onClick:()=>openPwModal(s,rebuild)},["🔑 PW"])
+              : span({style:{fontSize:"11px",color:"var(--muted)",lineHeight:"28px"}},["未登録"]),
+            btn({className:"btn btn-d sm",onClick:async()=>{
+              if(!confirm(`${s.name}を削除しますか？`))return;
+              await DB.deleteStudent(s.id);
+              S.students=S.students.filter(x=>x.id!==s.id);
+              rebuild();
+            }},["削除"]),
+          ]),
+        );
+        return tr;
+      });
+
+      const tableWrap=div({style:{borderRadius:"0 0 10px 10px",border:"1px solid var(--border)",borderTop:"none",overflow:"hidden",display:"none"}});
+      tableWrap.append(el("table",{},[
+        el("thead",{},[el("tr",{},[
+          el("th",{},["組/番"]),
+          el("th",{},["氏名/ふりがな"]),
+          el("th",{},["生年月日"]),
+          el("th",{},["登録"]),
+          el("th",{},["回答"]),
+          el("th",{}),
+        ])]),
+        el("tbody",{},rows),
+      ]));
+
+      // 開閉トグル
+      blockHdr.addEventListener("click",()=>{
+        open=!open;
+        tableWrap.style.display=open?"block":"none";
+        arrow.style.transform=open?"":"rotate(-90deg)";
+      });
+
+      const block=div({style:{marginBottom:"16px"}});
+      block.append(blockHdr, tableWrap);
+      root.append(block);
+    });
   };
   rebuild();
+}
+
+// ── CSVインポート ────────────────────────────────────────────────────────────────
+function openCsvImport(onSave){
+  // 期待するCSV列: SID, 年, 組, 番, 年組, 姓, 名, 姓かな, 名かな, 姓名, 性, 生年月日
+  // インデックス:   0    1   2   3   4    5   6    7      8     9    10    11
+  let parsed=[];
+  const errEl=div({className:"hidden"});
+  const previewEl=div({});
+  const fileI=inp({type:"file",accept:".csv,.tsv,text/csv",className:"inp"});
+
+  fileI.addEventListener("change",e=>{
+    const file=e.target.files[0]; if(!file)return;
+
+    // UTF-8で読んで文字化けしてたらShift-JISで再読み込み
+    const tryRead=(encoding)=>{
+      const reader=new FileReader();
+      reader.onload=ev=>{
+        const text=ev.target.result;
+        // 文字化けチェック：「姓」「名」「組」などの日本語が含まれているか
+        const mojibake=text.includes("ï¿½")||text.includes("縺")||text.includes("�");
+        if(encoding==="UTF-8"&&mojibake){
+          // Shift-JISで再試行
+          tryRead("Shift-JIS");
+          return;
+        }
+        parseCSV(text);
+      };
+      reader.onerror=()=>showErr(errEl,"ファイルの読み込みに失敗しました");
+      reader.readAsText(file, encoding);
+    };
+    tryRead("UTF-8");
+  });
+  const parseCSV=(text)=>{
+    try{
+        const delim=text.includes("\t")?"\t":",";
+        const lines=text.trim().split(/\r?\n/);
+        // ヘッダー行をスキップ（SIDで始まる行 or 日本語ヘッダー行）
+        const dataLines=lines.filter(l=>{
+          const trimmed=l.trim();
+          if(!trimmed) return false;
+          const firstCol=trimmed.split(/\t|,/)[0].replace(/^"|"$/g,"");
+          // SID、番号でない行（数字またはsで始まる）のみ残す
+          return /^[sS]?[0-9]/.test(firstCol);
+        });
+
+        parsed=[];
+        const errs=[];
+        dataLines.forEach((line,i)=>{
+          const cols=line.split(delim).map(c=>c.trim().replace(/^"|"$/g,""));
+          if(cols.length<11){ errs.push(`行${i+2}: 列数不足(${cols.length}列)`); return; }
+
+          const gradeRaw=cols[1];
+          const cls=cols[2];
+          const number=cols[3];
+          const lastName=cols[5];
+          const firstName=cols[6];
+          const lastKana=cols[7];
+          const firstKana=cols[8];
+          const genderRaw=cols[10];
+          const dobRaw=cols[11]||"";
+
+          if(!lastName&&!firstName){ errs.push(`行${i+2}: 氏名が空`); return; }
+
+          const gradeMap={"4":"1","5":"2","6":"3","1":"1","2":"2","3":"3"};
+          const grade=gradeMap[gradeRaw]||gradeRaw;
+
+          const genderMap={m:"male",f:"female","男":"male","女":"female","male":"male","female":"female"};
+          const gender=genderMap[genderRaw.toLowerCase()]||"other";
+
+          const dob=dobRaw.replace(/\//g,"-").replace(/(\d{4})-(\d{1,2})-(\d{1,2})/,(m,y,mo,d)=>`${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`);
+
+          parsed.push({
+            id:genId(),
+            name:`${lastName} ${firstName}`.trim(),
+            kana:`${lastKana} ${firstKana}`.trim(),
+            dob, gender, grade, cls, number,
+            passwordHash:null, registered:false,
+          });
+        });
+
+        previewEl.innerHTML="";
+        if(errs.length){
+          previewEl.append(div({style:{color:"var(--red)",fontSize:"12px",marginBottom:"10px",padding:"8px",background:"rgba(232,69,69,.08)",borderRadius:"6px"}},[
+            `⚠ ${errs.length}件の警告: `+errs.slice(0,3).join(" / ")+(errs.length>3?` 他${errs.length-3}件…`:"")
+          ]));
+        }
+        if(parsed.length){
+          previewEl.append(
+            div({style:{fontSize:"13px",fontWeight:600,marginBottom:"8px",color:"var(--green)"}},[`✓ ${parsed.length}名を読み込みました`]),
+            div({className:"tw",style:{maxHeight:"260px",overflowY:"auto"}},[el("table",{},[
+              el("thead",{},[el("tr",{},[el("th",{},["氏名"]),el("th",{},["ふりがな"]),el("th",{},["学年/組"]),el("th",{},["番号"]),el("th",{},["性別"]),el("th",{},["生年月日"])])]),
+              el("tbody",{},parsed.map(s=>el("tr",{},[
+                el("td",{style:{fontWeight:600}},[s.name]),
+                el("td",{style:{color:"var(--muted)",fontSize:"11px"}},[s.kana]),
+                el("td",{},[`${s.grade}年${s.cls}組`]),
+                el("td",{},[s.number]),
+                el("td",{},[{male:"男",female:"女",other:"他"}[s.gender]||""]),
+                el("td",{style:{color:"var(--muted)",fontSize:"11px"}},[s.dob]),
+              ]))),
+            ])]),
+          );
+        } else if(!errs.length){
+          previewEl.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"16px 0",textAlign:"center"}},["データが見つかりませんでした。ファイル形式を確認してください。"]));
+        }
+        errEl.className="hidden";
+      }catch(err){
+        showErr(errEl,"CSV解析エラー: "+err.message);
+        parsed=[];
+      }
+  };
+
+  const box=div({className:"mb",style:{maxWidth:"700px"}});
+  box.append(
+    mhdr("📂 CSVインポート",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+      // フォーマット説明
+      div({style:{fontSize:"12px",color:"var(--muted)",padding:"12px",background:"var(--navy)",borderRadius:"8px",lineHeight:1.8}},[
+        "対応フォーマット（タブ or カンマ区切り）：",el("br"),
+        "SID　年　組　番　年組　姓　名　姓かな　名かな　姓名　性(m/f)　生年月日",el("br"),
+        "※ 年「5」は高2（2年）に自動変換。ヘッダー行は自動スキップ。",
+      ]),
+      ff("CSVファイルを選択",fileI),
+      previewEl,
+      errEl,
+    ]),
+    div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px",justifyContent:"flex-end"}},[
+      btn({className:"btn btn-g",onClick:()=>ov.remove()},["キャンセル"]),
+      btn({className:"btn btn-p",onClick:async()=>{
+        if(!parsed.length) return showErr(errEl,"先にCSVファイルを選択してください");
+        // 重複チェック：同じ学年+組+番号がすでに存在する場合はスキップ
+        let added=0, skipped=0;
+        for(const s of parsed){
+          const exists=S.students.find(x=>x.grade===s.grade&&x.cls===s.cls&&String(x.number)===String(s.number));
+          if(exists){ skipped++; continue; }
+          await DB.saveStudent(s);
+          S.students.push(s);
+          added++;
+        }
+        ov.remove();
+        await onSave();
+        if(skipped>0) alert(`✓ ${added}名を追加しました（${skipped}名は重複のためスキップ）`);
+      }},["インポート実行"]),
+    ]),
+  );
+  const ov=overlay(box,()=>ov.remove());
 }
 
 function openStudentModal(onSave){
@@ -1287,7 +1606,7 @@ async function renderStudent(){
   ]);
 
   const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"24px"}});
-  const STABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"]];
+  const STABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"]];
   let sCurTab="uniform";
   const sTabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const sTabBtns={};
@@ -1303,6 +1622,34 @@ async function renderStudent(){
       sTabContent.innerHTML="";
       renderSMatches(sTabContent,student);
     }
+    if(k==="chat"){
+      S.readMarks=await DB.getReadMarks(student.id);
+      renderChat(sTabContent,student.id,student.name);
+      // バッジ更新
+      updateChatBadge(sTabBtns["chat"],student.id);
+    }
+  };
+
+  // 未読バッジ更新関数
+  const updateChatBadge=async(tabBtn,uid)=>{
+    const marks=await DB.getReadMarks(uid);
+    const rooms=await DB.getChatRooms();
+    let totalUnread=0;
+    // 全体チャット
+    const allMsgs=await DB.getChatMessages("all");
+    const lastReadAll=marks["all"]||"";
+    totalUnread+=allMsgs.filter(m=>m.createdAt>lastReadAll&&m.senderId!==uid).length;
+    // 各グループ
+    for(const r of rooms){
+      const msgs=await DB.getChatMessages(r.id);
+      const lastRead=marks[r.id]||"";
+      totalUnread+=msgs.filter(m=>m.createdAt>lastRead&&m.senderId!==uid).length;
+    }
+    if(totalUnread>0){
+      tabBtn.innerHTML=`💬 チャット <span style="background:var(--red);color:#fff;border-radius:100px;padding:0 6px;font-size:10px;font-weight:700;margin-left:4px">${totalUnread}</span>`;
+    } else {
+      tabBtn.textContent="💬 チャット";
+    }
   };
   STABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===sCurTab?"on":""}`,onClick:()=>switchSTab(k)},[l]); sTabBtns[k]=b; sTabBar.append(b); });
   switchSTab("uniform");
@@ -1313,9 +1660,15 @@ async function renderStudent(){
 function renderSUniform(root,student){
   root.innerHTML="";
   const gLabel={male:"男性",female:"女性",other:"その他"}[student.gender]||"";
-  const pending=S.items.filter(i=>!getResp(i.id,student.id)&&!isExp(i.deadline));
-  const done   =S.items.filter(i=> getResp(i.id,student.id));
-  const expired=S.items.filter(i=>!getResp(i.id,student.id)&& isExp(i.deadline));
+  // 対象フィルター：学年・性別が設定されている場合はその選手のみ表示
+  const isTargeted=(item)=>{
+    const gradeOk=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(student.grade);
+    const genderOk=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(student.gender);
+    return gradeOk&&genderOk;
+  };
+  const pending=S.items.filter(i=>isTargeted(i)&&!getResp(i.id,student.id)&&!isExp(i.deadline));
+  const done   =S.items.filter(i=>isTargeted(i)&& getResp(i.id,student.id));
+  const expired=S.items.filter(i=>isTargeted(i)&&!getResp(i.id,student.id)&& isExp(i.deadline));
   const rerender=()=>renderStudent();
 
   if(S.cfg.greeting) root.append(div({style:{marginBottom:"20px",padding:"12px 16px",background:"rgba(74,158,255,.07)",borderRadius:"10px",border:"1px solid rgba(74,158,255,.2)",fontSize:"13px",lineHeight:1.7}},["📢 "+S.cfg.greeting]));
@@ -2087,6 +2440,160 @@ function renderTAttribute(root){
   buildDiag();
 }
 
+// ─── CHAT ───────────────────────────────────────────────────────────────────────
+async function renderChat(root, userId, userName, isTeacher=false){
+  root.innerHTML="";
+  root.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"16px 0",textAlign:"center"}},["読み込み中..."]));
+  S.chatRooms=await DB.getChatRooms();
+  root.innerHTML="";
+
+  const allRooms=[
+    {id:"all", name:"📢 全体チャット", sub:"部員・教員全員", fixed:true},
+    ...S.chatRooms,
+  ];
+
+  const hdr=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}});
+  hdr.append(div({style:{fontSize:"20px",fontWeight:700}},["💬 チャット"]));
+  if(isTeacher){
+    hdr.append(btn({className:"btn btn-p",onClick:()=>openChatRoomModal(null,async()=>{
+      S.chatRooms=await DB.getChatRooms();
+      renderChat(root,userId,userName,true);
+    })},["＋ グループを作成"]));
+  }
+
+  const leftCol=div({style:{flex:"0 0 220px",minWidth:0,display:"flex",flexDirection:"column",gap:"6px"}});
+  const rightCol=div({style:{flex:"1 1 0",minWidth:0}});
+  root.append(hdr, div({style:{display:"flex",gap:"16px",alignItems:"flex-start",flexWrap:"wrap"}},[leftCol,rightCol]));
+
+  let activeRoomId=null;
+  const readMarks=await DB.getReadMarks(userId);
+
+  const buildRoomList=async()=>{
+    leftCol.innerHTML="";
+    for(const room of allRooms){
+      const msgs=await DB.getChatMessages(room.id);
+      const lastRead=readMarks[room.id]||"";
+      const unread=msgs.filter(m=>m.createdAt>lastRead&&m.senderId!==userId).length;
+      const isActive=activeRoomId===room.id;
+      const card=div({style:{
+        padding:"10px 12px",borderRadius:"8px",cursor:"pointer",transition:"all .18s",
+        border:`1.5px solid ${isActive?"var(--accent)":"var(--border)"}`,
+        background:isActive?"rgba(244,162,40,.1)":"var(--card)",
+      }});
+      const nameRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}});
+      nameRow.append(
+        div({style:{fontWeight:600,fontSize:"13px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[room.name]),
+        unread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"1px 7px",fontSize:"10px",fontWeight:700,flexShrink:0}},[String(unread)]):"",
+      );
+      if(isTeacher&&!room.fixed){
+        nameRow.append(div({style:{display:"flex",gap:"3px",flexShrink:0}},[
+          btn({className:"btn btn-g sm",style:{padding:"2px 7px",fontSize:"10px"},onClick:async e=>{
+            e.stopPropagation();
+            openChatRoomModal(room,async()=>{ S.chatRooms=await DB.getChatRooms(); renderChat(root,userId,userName,true); });
+          }},["編集"]),
+          btn({className:"btn btn-d sm",style:{padding:"2px 7px",fontSize:"10px"},onClick:async e=>{
+            e.stopPropagation();
+            if(!confirm(`「${room.name}」を削除しますか？`))return;
+            await DB.deleteChatRoom(room.id);
+            S.chatRooms=S.chatRooms.filter(r=>r.id!==room.id);
+            renderChat(root,userId,userName,true);
+          }},["削除"]),
+        ]));
+      }
+      card.append(
+        nameRow,
+        room.sub?div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[room.sub]):"",
+        msgs.length?div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[msgs[msgs.length-1].senderName+": "+msgs[msgs.length-1].text]):"",
+      );
+      card.addEventListener("click",()=>{ activeRoomId=room.id; buildRoomList(); openRoom(room); });
+      leftCol.append(card);
+    }
+  };
+
+  const openRoom=async(room)=>{
+    rightCol.innerHTML="";
+    const msgs=await DB.getChatMessages(room.id);
+    await DB.markRead(userId,room.id);
+    readMarks[room.id]=new Date().toISOString();
+
+    const msgArea=div({style:{
+      height:"420px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"8px",
+      padding:"16px",background:"var(--navy)",borderRadius:"10px",marginBottom:"12px",
+    }});
+
+    const renderMsgs=(messages)=>{
+      msgArea.innerHTML="";
+      if(!messages.length){
+        msgArea.append(div({style:{textAlign:"center",color:"var(--muted)",fontSize:"13px",padding:"40px 0"}},["まだメッセージがありません"]));
+        return;
+      }
+      messages.forEach(m=>{
+        const isMe=m.senderId===userId;
+        const isTeacherMsg=m.senderId==="__teacher__";
+        const bubble=div({style:{display:"flex",flexDirection:"column",alignItems:isMe?"flex-end":"flex-start",marginBottom:"4px"}});
+        bubble.append(
+          div({style:{fontSize:"10px",color:"var(--muted)",marginBottom:"2px",[isMe?"paddingRight":"paddingLeft"]:"4px"}},[isTeacherMsg?"🏫 "+m.senderName:m.senderName]),
+          (()=>{
+            const b=div({style:{maxWidth:"70%",padding:"8px 12px",borderRadius:isMe?"12px 4px 12px 12px":"4px 12px 12px 12px",background:isMe?"var(--accent)":isTeacherMsg?"rgba(74,158,255,.2)":"var(--navy-mid)",color:isMe?"#000":"var(--text)",fontSize:"13px",lineHeight:1.6,wordBreak:"break-word"}},[m.text]);
+            if(isMe){
+              let pt; b.style.cursor="pointer"; b.title="長押しで削除";
+              b.addEventListener("mousedown",()=>{ pt=setTimeout(async()=>{ if(!confirm("削除しますか？"))return; await DB.deleteChatMessage(room.id,m.id); const u=await DB.getChatMessages(room.id); renderMsgs(u); buildRoomList(); },700); });
+              b.addEventListener("mouseup",()=>clearTimeout(pt));
+              b.addEventListener("mouseleave",()=>clearTimeout(pt));
+            }
+            return b;
+          })(),
+          div({style:{fontSize:"10px",color:"var(--muted)",marginTop:"2px",[isMe?"paddingRight":"paddingLeft"]:"4px"}},[fmtD(m.createdAt)]),
+        );
+        msgArea.append(bubble);
+      });
+      msgArea.scrollTop=msgArea.scrollHeight;
+    };
+    renderMsgs(msgs);
+
+    let inputText="";
+    const textI=ta({className:"inp",rows:2},""); textI.placeholder="メッセージを入力...（Enterで送信）"; textI.style.resize="none";
+    textI.addEventListener("input",e=>inputText=e.target.value);
+    const sendMsg=async()=>{
+      const text=inputText.trim(); if(!text)return;
+      const msg={id:genId(),roomId:room.id,senderId:userId,senderName:userName,text,createdAt:new Date().toISOString()};
+      await DB.sendChatMessage(room.id,msg);
+      textI.value=""; inputText="";
+      const updated=await DB.getChatMessages(room.id); renderMsgs(updated); buildRoomList();
+    };
+    textI.addEventListener("keydown",async e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); await sendMsg(); } });
+
+    rightCol.append(
+      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",paddingBottom:"8px",borderBottom:"1px solid var(--border)"}},[room.name]),
+      msgArea,
+      div({style:{display:"flex",gap:"8px",alignItems:"flex-end"}},[
+        div({style:{flex:1}},[textI]),
+        btn({className:"btn btn-p",style:{alignSelf:"flex-end",padding:"8px 20px"},onClick:sendMsg},["送信"]),
+      ]),
+    );
+  };
+
+  await buildRoomList();
+  if(allRooms.length){ activeRoomId=allRooms[0].id; buildRoomList(); openRoom(allRooms[0]); }
+}
+
+function openChatRoomModal(existing, onSave){
+  let name=existing?.name||"", sub=existing?.sub||"";
+  const box=div({className:"mb",style:{maxWidth:"400px"}}); const errEl=div({className:"hidden"});
+  const nameI=inp({className:"inp",placeholder:"例：春季大会グループ",value:name}); nameI.addEventListener("input",e=>name=e.target.value);
+  const subI=inp({className:"inp",placeholder:"例：2025年5月 大会メンバー用",value:sub}); subI.addEventListener("input",e=>sub=e.target.value);
+  box.append(
+    mhdr(existing?"グループを編集":"＋ グループを作成",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"14px"}},[ff("グループ名 *",nameI),ff("説明（任意）",subI),errEl]),
+    mftr(()=>ov.remove(),async()=>{
+      if(!name.trim()) return showErr(errEl,"グループ名を入力してください");
+      const room={id:existing?.id||genId(),name:name.trim(),sub:sub.trim(),createdAt:existing?.createdAt||new Date().toISOString()};
+      await DB.saveChatRoom(room);
+      ov.remove(); onSave();
+    },existing?"更新":"作成"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
 // ─── Boot ───────────────────────────────────────────────────────────────────────
 (async()=>{
   try{
@@ -2096,6 +2603,18 @@ function renderTAttribute(root){
     app.innerHTML=`<div class="loading-screen"><div style="color:var(--red);font-size:14px">⚠ 接続エラー: ${e.message}</div></div>`;
   }
 })();
+
+// ─── PWA Service Worker ──────────────────────────────────────────────────────────
+if("serviceWorker" in navigator){
+  const swCode=`
+self.addEventListener("install",e=>{ self.skipWaiting(); });
+self.addEventListener("activate",e=>{ e.waitUntil(clients.claim()); });
+self.addEventListener("fetch",e=>{ e.respondWith(fetch(e.request).catch(()=>new Response("offline"))); });
+`;
+  const blob=new Blob([swCode],{type:"application/javascript"});
+  const swUrl=URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(()=>{});
+}
 </script>
 </body>
 </html>
