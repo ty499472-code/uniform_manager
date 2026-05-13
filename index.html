@@ -666,13 +666,174 @@ function renderTItems(root){
     S.items.forEach(item=>list.append(makeItemCard(item,rebuild)));
   };
   root.append(
-    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}},[
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}},[
       div({},[div({style:{fontSize:"20px",fontWeight:700}},["配布物・回答管理"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.items.length}件`])]),
-      btn({className:"btn btn-p",onClick:()=>openItemModal(null,rebuild)},["＋ 新規追加"]),
+      div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
+        btn({className:"btn btn-g",onClick:()=>openResponseCsvImport(rebuild)},["📂 回答CSVインポート"]),
+        btn({className:"btn btn-p",onClick:()=>openItemModal(null,rebuild)},["＋ 新規追加"]),
+      ]),
     ]),
     list,
   );
   rebuild();
+}
+
+// ── 回答CSVインポート ─────────────────────────────────────────────────────────────
+// フォーマット: タイムスタンプ,メール,名前,携帯(生徒),携帯(保護者),シューズ,短パン,ゲームシャツ,Tシャツ半袖,Tシャツ長袖,...
+// 列インデックス: 0=タイムスタンプ, 1=メール, 2=名前, 5=シューズ(スキップ), 6=短パン, 7=ゲームシャツ, 8=T半袖, 9=T長袖
+function openResponseCsvImport(onSave){
+  let parsed=[];
+  const errEl=div({className:"hidden"});
+  const previewEl=div({});
+  const fileI=inp({type:"file",accept:".csv,.tsv,text/csv",className:"inp"});
+
+  // 配布物名のマッピング（部分一致で照合）
+  const ITEM_MAP=[
+    {colIdx:6, keywords:["短パン","ゲームパンツ","ハーフパンツ"], maleItem:"ゲームパンツ", femaleItem:"女子ハーフパンツ", useSex:true},
+    {colIdx:7, keywords:["ゲームシャツ","全体ユニフォーム","ユニフォーム"], itemName:"全体ユニフォーム", useSex:false},
+    {colIdx:8, keywords:["Tシャツ","半袖","移動着"], itemName:"移動着　半袖", useSex:false},
+    {colIdx:9, keywords:["長袖"], itemName:"移動着　長袖", useSex:false},
+  ];
+
+  // 配布物をキーワードで探す
+  const findItem=(name)=>{
+    if(!name) return null;
+    return S.items.find(i=>name.includes(i.name)||i.name.includes(name))||
+           S.items.find(i=>i.name.replace(/[　\s]/g,"").includes(name.replace(/[　\s]/g,"")))||null;
+  };
+
+  const tryRead=(encoding)=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const text=ev.target.result;
+      const mojibake=text.includes("ï¿½")||text.includes("縺")||text.includes("�");
+      if(encoding==="UTF-8"&&mojibake){ tryRead("Shift-JIS"); return; }
+      parseResponseCSV(text);
+    };
+    reader.readAsText(fileI.files[0], encoding);
+  };
+
+  const parseResponseCSV=(text)=>{
+    try{
+      const delim=text.includes("\t")?"\t":",";
+      const lines=text.trim().split(/\r?\n/);
+      // ヘッダー行スキップ
+      const dataLines=lines.filter((l,i)=>{
+        if(i===0) return false; // 1行目は必ずヘッダー
+        return l.trim()!=="";
+      });
+
+      parsed=[];
+      const errs=[];
+      const warns=[];
+
+      dataLines.forEach((line,i)=>{
+        const cols=line.split(delim).map(c=>c.trim().replace(/^"|"$/g,""));
+        const rawName=cols[2]||"";
+        if(!rawName){ errs.push(`行${i+2}: 名前が空`); return; }
+
+        // 名前のスペースを除去して照合
+        const normName=rawName.replace(/[\s　]/g,"");
+        const student=S.students.find(s=>
+          s.name.replace(/[\s　]/g,"")===normName ||
+          s.kana?.replace(/[\s　]/g,"")===normName
+        );
+
+        if(!student){ warns.push(`「${rawName}」: 選手が見つかりません`); return; }
+
+        // 各列のサイズを取得
+        const entries=[];
+        ITEM_MAP.forEach(map=>{
+          const sizeRaw=cols[map.colIdx]||"";
+          if(!sizeRaw||sizeRaw==="-"||sizeRaw==="未回答") return;
+
+          if(map.useSex){
+            // 性別で振り分け
+            const isFemale=student.gender==="female";
+            const targetName=isFemale?map.femaleItem:map.maleItem;
+            const item=S.items.find(i=>i.name.replace(/[　\s]/g,"")===targetName.replace(/[　\s]/g,""));
+            if(item) entries.push({item, size:sizeRaw});
+            else warns.push(`「${rawName}」: 配布物「${targetName}」が見つかりません`);
+          } else {
+            const item=findItem(map.itemName);
+            if(item) entries.push({item, size:sizeRaw});
+            else warns.push(`「${rawName}」: 配布物「${map.itemName}」が見つかりません`);
+          }
+        });
+
+        if(entries.length) parsed.push({student, entries, rawName});
+      });
+
+      // プレビュー表示
+      previewEl.innerHTML="";
+      if(errs.length||warns.length){
+        previewEl.append(div({style:{color:"var(--red)",fontSize:"12px",marginBottom:"10px",padding:"10px",background:"rgba(232,69,69,.08)",borderRadius:"6px",lineHeight:1.7}},[
+          errs.length?`❌ エラー ${errs.length}件: `+errs.slice(0,3).join(" / ")+(errs.length>3?`...`:""):"",
+          errs.length&&warns.length?el("br"):"",
+          warns.length?`⚠ 警告 ${warns.length}件: `+warns.slice(0,3).join(" / ")+(warns.length>3?` 他${warns.length-3}件…`:""):"",
+        ]));
+      }
+      if(parsed.length){
+        const rows=parsed.flatMap(p=>p.entries.map(e=>el("tr",{},[
+          el("td",{style:{fontWeight:600}},[p.student.name]),
+          el("td",{style:{color:"var(--muted)"}},[`${p.student.grade}年${p.student.cls}組`]),
+          el("td",{},[e.item.name]),
+          el("td",{},[badge("b-g",e.size)]),
+        ])));
+        previewEl.append(
+          div({style:{fontSize:"13px",fontWeight:600,marginBottom:"8px",color:"var(--green)"}},[`✓ ${parsed.length}名 / ${parsed.reduce((a,p)=>a+p.entries.length,0)}件の回答を読み込みました`]),
+          div({className:"tw",style:{maxHeight:"300px",overflowY:"auto"}},[el("table",{},[
+            el("thead",{},[el("tr",{},[el("th",{},["氏名"]),el("th",{},["学年/組"]),el("th",{},["配布物"]),el("th",{},["サイズ"])])]),
+            el("tbody",{},rows),
+          ])]),
+        );
+      } else {
+        previewEl.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"16px 0",textAlign:"center"}},["マッチするデータが見つかりませんでした"]));
+      }
+      errEl.className="hidden";
+    }catch(err){
+      showErr(errEl,"解析エラー: "+err.message);
+      parsed=[];
+    }
+  };
+
+  fileI.addEventListener("change",()=>{ if(fileI.files[0]) tryRead("UTF-8"); });
+
+  const box=div({className:"mb",style:{maxWidth:"700px"}});
+  box.append(
+    mhdr("📂 回答CSVインポート",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+      div({style:{fontSize:"12px",color:"var(--muted)",padding:"12px",background:"var(--navy)",borderRadius:"8px",lineHeight:1.8}},[
+        "Googleフォームの回答CSVをそのままアップロード可能。",el("br"),
+        "列構成: タイムスタンプ / メール / 名前 / 携帯(生徒) / 携帯(保護者) / シューズ(スキップ) / 短パン / ゲームシャツ / T半袖 / T長袖",el("br"),
+        "・名前はスペースなしでも自動照合します",el("br"),
+        "・短パンは性別で自動振り分け（男→ゲームパンツ / 女→女子ハーフパンツ）",
+      ]),
+      ff("CSVファイルを選択",fileI),
+      previewEl,
+      errEl,
+    ]),
+    div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px",justifyContent:"flex-end"}},[
+      btn({className:"btn btn-g",onClick:()=>ov.remove()},["キャンセル"]),
+      btn({className:"btn btn-p",onClick:async()=>{
+        if(!parsed.length) return showErr(errEl,"先にCSVファイルを選択してください");
+        let count=0;
+        for(const p of parsed){
+          for(const e of p.entries){
+            const key=`${e.item.id}_${p.student.id}`;
+            const data={size:e.size, submittedAt:new Date().toISOString()};
+            await DB.saveResp(key,data);
+            S.resp[key]=data;
+            count++;
+          }
+        }
+        ov.remove();
+        onSave();
+        alert(`✓ ${count}件の回答データを登録しました`);
+      }},["インポート実行"]),
+    ]),
+  );
+  const ov=overlay(box,()=>ov.remove());
 }
 
 function makeItemCard(item,onUpdate){
