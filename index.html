@@ -3195,30 +3195,34 @@ function checkNewChatMessages() {
     return;
   }
 
-  // メール送信
-  const body = newMessages.map(m =>
-    \`【\${m.roomName}】\${m.sender}: \${m.text}\`
-  ).join("\\n");
-
-  const subject = \`[\${CLUB_NAME}] 新着チャット \${newMessages.length}件\`;
-  const htmlBody = \`
-    <div style="font-family:sans-serif;max-width:600px">
-      <h2 style="color:#F4A228;border-bottom:2px solid #F4A228;padding-bottom:8px">
-        💬 新着チャット通知
-      </h2>
-      \${newMessages.map(m => \`
-        <div style="margin:12px 0;padding:12px;background:#f5f5f5;border-radius:8px;border-left:4px solid #F4A228">
-          <div style="font-size:12px;color:#666;margin-bottom:4px">【\${m.roomName}】\${new Date(m.createdAt).toLocaleString("ja-JP")}</div>
-          <div style="font-weight:bold">\${m.sender}</div>
-          <div style="margin-top:4px">\${m.text}</div>
-        </div>
-      \`).join("")}
-      <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
-    </div>
-  \`;
+  // ルームごとにグループ化してメール送信（件名=ルーム名でスレッド化）
+  const byRoom = {};
+  newMessages.forEach(m => {
+    if (!byRoom[m.roomName]) byRoom[m.roomName] = [];
+    byRoom[m.roomName].push(m);
+  });
 
   getAllEmails().forEach(email => {
-    try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
+    Object.entries(byRoom).forEach(([roomName, msgs]) => {
+      const subject = \`[\${CLUB_NAME}] \${roomName}\`;
+      const body = msgs.map(m => \`\${m.sender}: \${m.text}\`).join("\\n");
+      const htmlBody = \`
+        <div style="font-family:sans-serif;max-width:600px">
+          <h2 style="color:#F4A228;border-bottom:2px solid #F4A228;padding-bottom:8px">
+            💬 \${roomName}
+          </h2>
+          \${msgs.map(m => \`
+            <div style="margin:12px 0;padding:12px;background:#f5f5f5;border-radius:8px;border-left:4px solid #F4A228">
+              <div style="font-size:12px;color:#666;margin-bottom:4px">\${new Date(m.createdAt).toLocaleString("ja-JP")}</div>
+              <div style="font-weight:bold">\${m.sender}</div>
+              <div style="margin-top:4px">\${m.text}</div>
+            </div>
+          \`).join("")}
+          <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
+        </div>
+      \`;
+      try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
+    });
   });
 
   props.setProperty(lastCheckKey, new Date().toISOString());
