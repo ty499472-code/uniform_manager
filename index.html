@@ -122,7 +122,8 @@ const setDoc     = (ref, data)         => ref.set(data);
 const deleteDoc  = ref                 => ref.delete();
 
 // ─── DB helpers ────────────────────────────────────────────────────────────────
-const DEF_CFG = { clubName:"清教学園バドミントン部", teacherPw:"teacher123", greeting:"" };
+const DEF_CFG = { clubName:"清教学園バドミントン部", teacherPw:"teacher123", greeting:"", coaches:[] };
+// coaches: [{id, name, email}]
 
 const DB = {
   async getCfg(){
@@ -2047,6 +2048,65 @@ function renderTSettings(root){
   };
   buildEmailSection();
 
+  // ── 指導者管理セクション ──
+  const coachSection=div({});
+  const buildCoachSection=()=>{
+    coachSection.innerHTML="";
+    if(!S.cfg.coaches) S.cfg.coaches=[];
+    const coaches=S.cfg.coaches;
+
+    // 入力フォーム
+    let cName="", cEmail="";
+    const cNameI=inp({className:"inp",placeholder:"指導者の名前"}); cNameI.addEventListener("input",e=>cName=e.target.value);
+    const cEmailI=inp({className:"inp",type:"email",placeholder:"メールアドレス"}); cEmailI.addEventListener("input",e=>cEmail=e.target.value);
+    const cErrEl=div({className:"hidden"});
+
+    // 登録済みリスト
+    const coachList=coaches.length ? div({style:{marginTop:"12px",border:"1px solid var(--border)",borderRadius:"8px",overflow:"hidden"}},[
+      el("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:"13px"}},[
+        el("thead",{},[el("tr",{},[
+          el("th",{style:{padding:"7px 12px",background:"var(--navy-mid)",textAlign:"left"}},["名前"]),
+          el("th",{style:{padding:"7px 12px",background:"var(--navy-mid)",textAlign:"left"}},["メールアドレス"]),
+          el("th",{style:{padding:"7px 12px",background:"var(--navy-mid)"}}),
+        ])]),
+        el("tbody",{},coaches.map(c=>el("tr",{},[
+          el("td",{style:{padding:"7px 12px",borderTop:"1px solid var(--border)",fontWeight:600}},[c.name]),
+          el("td",{style:{padding:"7px 12px",borderTop:"1px solid var(--border)",color:"var(--muted)"}},[c.email]),
+          el("td",{style:{padding:"7px 12px",borderTop:"1px solid var(--border)"}},[
+            btn({className:"btn btn-d sm",onClick:async()=>{
+              S.cfg.coaches=S.cfg.coaches.filter(x=>x.id!==c.id);
+              await DB.saveCfg(S.cfg);
+              buildCoachSection();
+            }},["削除"]),
+          ]),
+        ]))),
+      ]),
+    ]) : div({style:{fontSize:"13px",color:"var(--muted)",padding:"8px 0"}},["まだ指導者が登録されていません"]);
+
+    coachSection.append(div({className:"card",style:{marginBottom:"16px"}},[
+      div({style:{fontWeight:700,fontSize:"14px",marginBottom:"16px"}},["👨‍🏫 指導者管理"]),
+      div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"14px",lineHeight:1.7}},[
+        "登録した指導者は「教員・指導者専用チャット」に参加でき、メール通知も受け取れます。",el("br"),
+        "※ 指導者は教員パスワードでログインします。",
+      ]),
+      div({style:{display:"flex",flexDirection:"column",gap:"10px"}},[
+        div({className:"grid2"},[ff("名前 *",cNameI),ff("メールアドレス *",cEmailI)]),
+        cErrEl,
+        btn({className:"btn btn-g",style:{alignSelf:"flex-start"},onClick:async()=>{
+          if(!cName.trim()) return showErr(cErrEl,"名前を入力してください");
+          if(!cEmail.includes("@")) return showErr(cErrEl,"メールアドレスを正しく入力してください");
+          if(!S.cfg.coaches) S.cfg.coaches=[];
+          S.cfg.coaches.push({id:genId(), name:cName.trim(), email:cEmail.trim()});
+          await DB.saveCfg(S.cfg);
+          cNameI.value=""; cEmailI.value=""; cName=""; cEmail="";
+          buildCoachSection();
+        }},["＋ 指導者を追加"]),
+        coachList,
+      ]),
+    ]));
+  };
+  buildCoachSection();
+
   root.append(div({style:{maxWidth:"700px"}},[
     div({style:{fontSize:"20px",fontWeight:700,marginBottom:"6px"}},["⚙️ 設定"]),
     div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"24px"}},["教員側の管理設定"]),
@@ -2059,8 +2119,23 @@ function renderTSettings(root){
       ff("新しいパスワード",pwI),
     ]),
     emailSection,
+    // 指導者管理
+    coachSection,
     div({style:{display:"flex",alignItems:"center",marginBottom:"32px"}},[
-      btn({className:"btn btn-p",onClick:async()=>{ await DB.saveCfg(S.cfg); showSaved(); }},["保存する"]),
+      btn({className:"btn btn-p",onClick:async()=>{
+        await DB.saveCfg(S.cfg);
+        // お知らせが入力されていたら通知フラグをFirestoreに書き込む
+        if(S.cfg.greeting&&S.cfg.greeting.trim()){
+          try{
+            await setDoc(doc(db,"notifications","greeting"),{
+              text:S.cfg.greeting.trim(),
+              updatedAt:new Date().toISOString(),
+              notified:false,
+            });
+          }catch(_){}
+        }
+        showSaved();
+      }},["保存する"]),
       savedEl,
     ]),
     // GAS コード表示
@@ -2956,7 +3031,8 @@ async function renderChat(root, userId, userName, isTeacher=false){
   root.innerHTML="";
 
   const allRooms=[
-    {id:"all", name:"📢 全体チャット", sub:"部員・教員全員", fixed:true},
+    {id:"all",    name:"📢 全体チャット",      sub:"部員・教員全員",   fixed:true},
+    {id:"staff",  name:"👨‍🏫 教員・指導者専用", sub:"教員・指導者のみ", fixed:true, staffOnly:true},
     ...S.chatRooms,
   ];
 
@@ -2973,12 +3049,12 @@ async function renderChat(root, userId, userName, isTeacher=false){
   const rightCol=div({style:{flex:"1 1 0",minWidth:0}});
   root.append(hdr, div({style:{display:"flex",gap:"16px",alignItems:"flex-start",flexWrap:"wrap"}},[leftCol,rightCol]));
 
-  let activeRoomId=null;
-  const readMarks=await DB.getReadMarks(userId);
+  // 生徒には staffOnly ルームを非表示
+  const visibleRooms=isTeacher?allRooms:allRooms.filter(r=>!r.staffOnly);
 
   const buildRoomList=async()=>{
     leftCol.innerHTML="";
-    for(const room of allRooms){
+    for(const room of visibleRooms){
       const msgs=await DB.getChatMessages(room.id);
       const lastRead=readMarks[room.id]||"";
       const unread=msgs.filter(m=>m.createdAt>lastRead&&m.senderId!==userId).length;
@@ -3082,7 +3158,7 @@ async function renderChat(root, userId, userName, isTeacher=false){
   };
 
   await buildRoomList();
-  if(allRooms.length){ activeRoomId=allRooms[0].id; buildRoomList(); openRoom(allRooms[0]); }
+  if(visibleRooms.length){ activeRoomId=visibleRooms[0].id; buildRoomList(); openRoom(visibleRooms[0]); }
 }
 
 function openChatRoomModal(existing, onSave){
@@ -3109,11 +3185,12 @@ function generateGasCode(){
   const clubName=S.cfg.clubName||"清教学園バドミントン部";
   const teacherEmail=S.cfg.teacherEmail||"";
   const studentEmails=S.students.filter(s=>s.email).map(s=>`"${s.email}"`).join(",\n    ");
+  const coachEmails=(S.cfg.coaches||[]).filter(c=>c.email).map(c=>`"${c.email}" /* ${c.name} */`).join(",\n    ");
 
   return `// ============================================================
 // ${clubName} 選手管理システム - メール通知スクリプト
 // Google Apps Script に貼り付けて使用してください
-// トリガー設定：checkNotifications を5分ごとに実行
+// トリガー設定：checkNotifications を3分ごとに実行
 // ============================================================
 
 const FIREBASE_PROJECT_ID = "${projectId}";
@@ -3121,16 +3198,28 @@ const FIREBASE_API_KEY    = "${apiKey}";
 const CLUB_NAME           = "${clubName}";
 const TEACHER_EMAIL       = "${teacherEmail}";
 
-// 通知先メールアドレス（生徒）
+// 生徒のメールアドレス
 const STUDENT_EMAILS = [
     ${studentEmails||'// メールアドレスが登録されていません'}
 ];
 
-// 全通知先（教員 + 生徒）
+// 指導者のメールアドレス
+const COACH_EMAILS = [
+    ${coachEmails||'// 指導者が登録されていません'}
+];
+
+// 全通知先（教員 + 生徒 + 指導者）
 function getAllEmails() {
-  const all = [...STUDENT_EMAILS];
+  const all = [...STUDENT_EMAILS, ...COACH_EMAILS];
   if (TEACHER_EMAIL) all.push(TEACHER_EMAIL);
   return [...new Set(all)]; // 重複除去
+}
+
+// 教員・指導者のみへの通知先
+function getStaffEmails() {
+  const all = [...COACH_EMAILS];
+  if (TEACHER_EMAIL) all.push(TEACHER_EMAIL);
+  return [...new Set(all)];
 }
 
 // Firestore REST API でドキュメント取得
@@ -3156,10 +3245,11 @@ function fVal(field) {
   return field.stringValue ?? field.integerValue ?? field.booleanValue ?? field.timestampValue ?? null;
 }
 
-// ─── メイン関数（5分ごとに実行）──────────────────────────────
+// ─── メイン関数（3分ごとに実行）──────────────────────────────
 function checkNotifications() {
   checkNewChatMessages();
   checkDeadlines();
+  checkGreeting();
 }
 
 // ─── チャット新着通知 ────────────────────────────────────────
@@ -3204,6 +3294,10 @@ function checkNewChatMessages() {
 
   getAllEmails().forEach(email => {
     Object.entries(byRoom).forEach(([roomName, msgs]) => {
+      // 教員・指導者専用ルームは教員・指導者のみに送信
+      const isStaffRoom = roomName.includes("教員・指導者");
+      const targets = isStaffRoom ? getStaffEmails() : getAllEmails();
+      if (!targets.includes(email)) return;
       const subject = \`[\${CLUB_NAME}] \${roomName}\`;
       const body = msgs.map(m => \`\${m.sender}: \${m.text}\`).join("\\n");
       const htmlBody = \`
@@ -3284,6 +3378,47 @@ function checkDeadlines() {
   });
 
   props.setProperty(notifiedKey, JSON.stringify(notified));
+}
+
+// ─── お知らせ通知 ────────────────────────────────────────────
+function checkGreeting() {
+  const data = fsGet("notifications/greeting");
+  if (!data) return;
+
+  const notified = data.fields?.notified?.booleanValue;
+  const text     = fVal(data.fields?.text);
+  if (notified || !text) return;
+
+  const subject  = \`[\${CLUB_NAME}] 📢 お知らせ\`;
+  const body     = text;
+  const htmlBody = \`
+    <div style="font-family:sans-serif;max-width:600px">
+      <h2 style="color:#4A9EFF;border-bottom:2px solid #4A9EFF;padding-bottom:8px">
+        📢 \${CLUB_NAME} からのお知らせ
+      </h2>
+      <div style="margin:16px 0;padding:16px;background:#f0f7ff;border-radius:8px;border-left:4px solid #4A9EFF;font-size:15px;line-height:1.8">
+        \${text.replace(/\\n/g,"<br>")}
+      </div>
+      <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
+    </div>
+  \`;
+
+  getAllEmails().forEach(email => {
+    try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
+  });
+
+  // 送信済みフラグを立てる（次回から再送しない）
+  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications/greeting?key=\${FIREBASE_API_KEY}\`;
+  UrlFetchApp.fetch(url, {
+    method: "PATCH",
+    contentType: "application/json",
+    payload: JSON.stringify({ fields: {
+      text:      { stringValue: text },
+      notified:  { booleanValue: true },
+      updatedAt: { timestampValue: new Date().toISOString() },
+    }}),
+    muteHttpExceptions: true,
+  });
 }`;
 }
 
