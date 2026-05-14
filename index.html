@@ -1958,20 +1958,131 @@ function renderTSettings(root){
   const clubI=inp({className:"inp",value:S.cfg.clubName,placeholder:"○○部"}); clubI.addEventListener("input",e=>S.cfg.clubName=e.target.value);
   const grtI=ta({className:"inp",rows:3},S.cfg.greeting); grtI.addEventListener("input",e=>S.cfg.greeting=e.target.value);
   const pwI=inp({className:"inp",type:"password",value:S.cfg.teacherPw}); pwI.addEventListener("input",e=>S.cfg.teacherPw=e.target.value);
-  root.append(div({style:{maxWidth:"600px"}},[
+
+  // メール通知セクション
+  const emailSection=div({});
+  const buildEmailSection=()=>{
+    emailSection.innerHTML="";
+    const studentsWithEmail=S.students.filter(s=>s.email);
+    const studentsNoEmail=S.students.filter(s=>!s.email);
+
+    // メールCSVインポート
+    const emailFileI=inp({type:"file",accept:".csv,text/csv",className:"inp"});
+    const emailPreview=div({});
+    const emailErrEl=div({className:"hidden"});
+    let emailParsed=[];
+
+    emailFileI.addEventListener("change",()=>{
+      const file=emailFileI.files[0]; if(!file) return;
+      const reader=new FileReader();
+      reader.onload=ev=>{
+        const text=ev.target.result;
+        const delim=text.includes("\t")?"\t":",";
+        const lines=text.trim().split(/\r?\n/).filter(l=>l.trim());
+        emailParsed=[];
+        const warns=[];
+        // ヘッダースキップ（1行目）
+        lines.slice(1).forEach((line,i)=>{
+          const cols=line.split(delim).map(c=>c.trim().replace(/^"|"$/g,""));
+          const email=cols[1]||""; // B列
+          const rawName=cols[2]||""; // C列
+          if(!email||!rawName) return;
+          if(!email.includes("@")){ warns.push(`行${i+2}: メール形式不正`); return; }
+          const normName=rawName.replace(/[\s　]/g,"");
+          const student=S.students.find(s=>s.name.replace(/[\s　]/g,"")===normName);
+          if(!student){ warns.push(`「${rawName}」: 選手が見つかりません`); return; }
+          emailParsed.push({student, email});
+        });
+        emailPreview.innerHTML="";
+        if(warns.length) emailPreview.append(div({style:{fontSize:"12px",color:"var(--red)",marginBottom:"8px"}},["⚠ "+warns.slice(0,3).join(" / ")]));
+        if(emailParsed.length) emailPreview.append(div({style:{fontSize:"13px",color:"var(--green)",marginBottom:"8px"}},[`✓ ${emailParsed.length}名のメールアドレスを読み込みました`]));
+      };
+      reader.readAsText(file,"UTF-8");
+    });
+
+    // 教員メールアドレス設定
+    const teacherEmailI=inp({className:"inp",type:"email",placeholder:"teacher@example.com",value:S.cfg.teacherEmail||""});
+    teacherEmailI.addEventListener("input",e=>S.cfg.teacherEmail=e.target.value);
+
+    emailSection.append(div({className:"card",style:{marginBottom:"16px"}},[
+      div({style:{fontWeight:700,fontSize:"14px",marginBottom:"16px"}},["📧 メール通知設定"]),
+      div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[
+        ff("教員メールアドレス（通知受信用）",teacherEmailI),
+        div({style:{height:"1px",background:"var(--border)"}}),
+        div({style:{fontWeight:600,fontSize:"13px",marginBottom:"-6px"}},["生徒メールアドレス一括登録（フォームCSVから）"]),
+        div({style:{fontSize:"12px",color:"var(--muted)"}},[
+          "フォームのCSVをそのままアップロード。B列のメールアドレスをC列の名前で照合して登録します。"
+        ]),
+        ff("CSVファイル（フォームの回答）",emailFileI),
+        emailPreview,
+        emailErrEl,
+        btn({className:"btn btn-g",onClick:async()=>{
+          if(!emailParsed.length) return showErr(emailErrEl,"先にCSVを選択してください");
+          for(const {student,email} of emailParsed){
+            student.email=email;
+            await DB.saveStudent(student);
+          }
+          showSaved(); buildEmailSection();
+        }},["メールアドレスを登録"]),
+        div({style:{height:"1px",background:"var(--border)"}}),
+        div({style:{fontSize:"13px",color:"var(--muted)"}},[
+          `登録済み: ${studentsWithEmail.length}名 / 未登録: ${studentsNoEmail.length}名`,
+        ]),
+        studentsWithEmail.length?div({style:{maxHeight:"160px",overflowY:"auto",border:"1px solid var(--border)",borderRadius:"8px"}},[
+          el("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:"12px"}},[
+            el("thead",{},[el("tr",{},[el("th",{style:{padding:"6px 10px",textAlign:"left",background:"var(--navy-mid)"}},["氏名"]),el("th",{style:{padding:"6px 10px",textAlign:"left",background:"var(--navy-mid)"}},["メールアドレス"]),el("th",{style:{padding:"6px 10px",background:"var(--navy-mid)"}})])]),
+            el("tbody",{},studentsWithEmail.map(s=>el("tr",{},[
+              el("td",{style:{padding:"5px 10px",borderTop:"1px solid var(--border)"}},[s.name]),
+              el("td",{style:{padding:"5px 10px",borderTop:"1px solid var(--border)",color:"var(--muted)"}},[s.email]),
+              el("td",{style:{padding:"5px 10px",borderTop:"1px solid var(--border)"}},[
+                btn({className:"btn btn-d sm",style:{padding:"1px 8px",fontSize:"10px"},onClick:async()=>{
+                  delete s.email; await DB.saveStudent(s); buildEmailSection();
+                }},["削除"]),
+              ]),
+            ]))),
+          ]),
+        ]):"",
+      ]),
+    ]));
+  };
+  buildEmailSection();
+
+  root.append(div({style:{maxWidth:"700px"}},[
     div({style:{fontSize:"20px",fontWeight:700,marginBottom:"6px"}},["⚙️ 設定"]),
     div({style:{color:"var(--muted)",fontSize:"13px",marginBottom:"24px"}},["教員側の管理設定"]),
     div({className:"card",style:{marginBottom:"16px"}},[
       div({style:{fontWeight:700,fontSize:"14px",marginBottom:"16px"}},["🏫 基本情報"]),
       div({style:{display:"flex",flexDirection:"column",gap:"14px"}},[ff("部活名・チーム名",clubI),ff("生徒へのお知らせ（任意）",grtI)]),
     ]),
-    div({className:"card",style:{marginBottom:"24px"}},[
+    div({className:"card",style:{marginBottom:"16px"}},[
       div({style:{fontWeight:700,fontSize:"14px",marginBottom:"16px"}},["🔐 教員パスワード変更"]),
       ff("新しいパスワード",pwI),
     ]),
-    div({style:{display:"flex",alignItems:"center"}},[
+    emailSection,
+    div({style:{display:"flex",alignItems:"center",marginBottom:"32px"}},[
       btn({className:"btn btn-p",onClick:async()=>{ await DB.saveCfg(S.cfg); showSaved(); }},["保存する"]),
       savedEl,
+    ]),
+    // GAS コード表示
+    div({className:"card",style:{marginBottom:"16px"}},[
+      div({style:{fontWeight:700,fontSize:"14px",marginBottom:"8px"}},["🤖 Google Apps Script 通知コード"]),
+      div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"12px",lineHeight:1.7}},[
+        "以下のコードを ",el("a",{href:"https://script.google.com",target:"_blank",style:{color:"var(--accent)"}},[" script.google.com "]),
+        " で新しいプロジェクトを作成して貼り付けてください。",el("br"),
+        "その後「トリガー」→「時間主導型」→「5分ごと」に設定します。",
+      ]),
+      btn({className:"btn btn-g",style:{marginBottom:"12px"},onClick:()=>{
+        const code=generateGasCode();
+        navigator.clipboard.writeText(code).then(()=>alert("✓ コードをコピーしました！script.google.com に貼り付けてください。"));
+      }},["📋 GASコードをコピー"]),
+      div({style:{fontSize:"11px",color:"var(--muted)",lineHeight:1.7}},[
+        "① script.google.com を開く",el("br"),
+        "② 「新しいプロジェクト」をクリック",el("br"),
+        "③ コードを貼り付けて保存（Ctrl+S）",el("br"),
+        "④ 上部メニュー「トリガー」→「トリガーを追加」",el("br"),
+        "⑤ 関数：checkNotifications / イベント：時間主導型 / 5分ごと",el("br"),
+        "⑥ 初回実行時に「権限を承認」を許可する",
+      ]),
     ]),
   ]));
 }
@@ -2991,6 +3102,187 @@ function openChatRoomModal(existing, onSave){
   );
   const ov=overlay(box,()=>ov.remove());
 }
+// ─── Google Apps Script コード生成 ──────────────────────────────────────────────
+function generateGasCode(){
+  const projectId="seikyobadomintonmanager";
+  const apiKey="AIzaSyB6TbrWqu2CAzggiCqzcvr06mwnDOdEZk4";
+  const clubName=S.cfg.clubName||"清教学園バドミントン部";
+  const teacherEmail=S.cfg.teacherEmail||"";
+  const studentEmails=S.students.filter(s=>s.email).map(s=>`"${s.email}"`).join(",\n    ");
+
+  return `// ============================================================
+// ${clubName} 選手管理システム - メール通知スクリプト
+// Google Apps Script に貼り付けて使用してください
+// トリガー設定：checkNotifications を5分ごとに実行
+// ============================================================
+
+const FIREBASE_PROJECT_ID = "${projectId}";
+const FIREBASE_API_KEY    = "${apiKey}";
+const CLUB_NAME           = "${clubName}";
+const TEACHER_EMAIL       = "${teacherEmail}";
+
+// 通知先メールアドレス（生徒）
+const STUDENT_EMAILS = [
+    ${studentEmails||'// メールアドレスが登録されていません'}
+];
+
+// 全通知先（教員 + 生徒）
+function getAllEmails() {
+  const all = [...STUDENT_EMAILS];
+  if (TEACHER_EMAIL) all.push(TEACHER_EMAIL);
+  return [...new Set(all)]; // 重複除去
+}
+
+// Firestore REST API でドキュメント取得
+function fsGet(path) {
+  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/\${path}?key=\${FIREBASE_API_KEY}\`;
+  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
+  if (res.getResponseCode() !== 200) return null;
+  return JSON.parse(res.getContentText());
+}
+
+// Firestore REST API でコレクション取得
+function fsList(collection) {
+  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/\${collection}?key=\${FIREBASE_API_KEY}\`;
+  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
+  if (res.getResponseCode() !== 200) return [];
+  const data = JSON.parse(res.getContentText());
+  return data.documents || [];
+}
+
+// Firestoreのフィールド値を取得するヘルパー
+function fVal(field) {
+  if (!field) return null;
+  return field.stringValue ?? field.integerValue ?? field.booleanValue ?? field.timestampValue ?? null;
+}
+
+// ─── メイン関数（5分ごとに実行）──────────────────────────────
+function checkNotifications() {
+  checkNewChatMessages();
+  checkDeadlines();
+}
+
+// ─── チャット新着通知 ────────────────────────────────────────
+function checkNewChatMessages() {
+  const props = PropertiesService.getScriptProperties();
+  const lastCheckKey = "LAST_CHAT_CHECK";
+  const lastCheck = props.getProperty(lastCheckKey) || new Date(0).toISOString();
+
+  // チャットルーム一覧取得
+  const rooms = fsList("chat_rooms");
+  const allRoomIds = ["all", ...rooms.map(r => r.name.split("/").pop())];
+
+  const newMessages = [];
+
+  allRoomIds.forEach(roomId => {
+    const msgs = fsList(\`chat_\${roomId}\`);
+    msgs.forEach(m => {
+      const createdAt = fVal(m.fields?.createdAt);
+      const text      = fVal(m.fields?.text);
+      const sender    = fVal(m.fields?.senderName);
+      if (createdAt && createdAt > lastCheck && text) {
+        const roomName = roomId === "all" ? "全体チャット" :
+          (rooms.find(r => r.name.split("/").pop() === roomId)?.fields?.name
+            ? fVal(rooms.find(r => r.name.split("/").pop() === roomId).fields.name)
+            : roomId);
+        newMessages.push({ roomName, sender, text, createdAt });
+      }
+    });
+  });
+
+  if (newMessages.length === 0) {
+    props.setProperty(lastCheckKey, new Date().toISOString());
+    return;
+  }
+
+  // メール送信
+  const body = newMessages.map(m =>
+    \`【\${m.roomName}】\${m.sender}: \${m.text}\`
+  ).join("\\n");
+
+  const subject = \`[\${CLUB_NAME}] 新着チャット \${newMessages.length}件\`;
+  const htmlBody = \`
+    <div style="font-family:sans-serif;max-width:600px">
+      <h2 style="color:#F4A228;border-bottom:2px solid #F4A228;padding-bottom:8px">
+        💬 新着チャット通知
+      </h2>
+      \${newMessages.map(m => \`
+        <div style="margin:12px 0;padding:12px;background:#f5f5f5;border-radius:8px;border-left:4px solid #F4A228">
+          <div style="font-size:12px;color:#666;margin-bottom:4px">【\${m.roomName}】\${new Date(m.createdAt).toLocaleString("ja-JP")}</div>
+          <div style="font-weight:bold">\${m.sender}</div>
+          <div style="margin-top:4px">\${m.text}</div>
+        </div>
+      \`).join("")}
+      <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
+    </div>
+  \`;
+
+  getAllEmails().forEach(email => {
+    try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
+  });
+
+  props.setProperty(lastCheckKey, new Date().toISOString());
+}
+
+// ─── 締切3日前通知 ───────────────────────────────────────────
+function checkDeadlines() {
+  const props = PropertiesService.getScriptProperties();
+  const now   = new Date();
+  const in3   = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+  const items = fsList("items");
+  const notifiedKey = "DEADLINE_NOTIFIED";
+  const notified = JSON.parse(props.getProperty(notifiedKey) || "{}");
+
+  const targets = [];
+
+  items.forEach(item => {
+    const id       = item.name.split("/").pop();
+    const name     = fVal(item.fields?.name);
+    const deadline = fVal(item.fields?.deadline);
+    if (!deadline || !name) return;
+
+    const dl = new Date(deadline);
+    if (dl < now || dl > in3) return; // 期限切れ or 3日以上先はスキップ
+
+    const dateKey = dl.toDateString();
+    if (notified[id] === dateKey) return; // 今日すでに通知済み
+
+    targets.push({ id, name, deadline: dl });
+    notified[id] = dateKey;
+  });
+
+  if (targets.length === 0) return;
+
+  const subject = \`[\${CLUB_NAME}] 配布物の締切が近づいています\`;
+  const body = targets.map(t =>
+    \`「\${t.name}」の締切：\${t.deadline.toLocaleString("ja-JP")}\`
+  ).join("\\n");
+
+  const htmlBody = \`
+    <div style="font-family:sans-serif;max-width:600px">
+      <h2 style="color:#E84545;border-bottom:2px solid #E84545;padding-bottom:8px">
+        ⏰ 締切3日前のお知らせ
+      </h2>
+      \${targets.map(t => \`
+        <div style="margin:12px 0;padding:12px;background:#fff3f3;border-radius:8px;border-left:4px solid #E84545">
+          <div style="font-weight:bold;font-size:15px">\${t.name}</div>
+          <div style="color:#E84545;margin-top:4px">締切：\${t.deadline.toLocaleString("ja-JP")}</div>
+          <div style="font-size:12px;color:#666;margin-top:4px">まだ回答していない方は早めに回答してください。</div>
+        </div>
+      \`).join("")}
+      <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
+    </div>
+  \`;
+
+  getAllEmails().forEach(email => {
+    try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
+  });
+
+  props.setProperty(notifiedKey, JSON.stringify(notified));
+}`;
+}
+
 // ─── Boot ───────────────────────────────────────────────────────────────────────
 (async()=>{
   try{
