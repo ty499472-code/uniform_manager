@@ -670,6 +670,7 @@ function renderTItems(root){
       div({},[div({style:{fontSize:"20px",fontWeight:700}},["配布物・回答管理"]),div({style:{color:"var(--muted)",fontSize:"13px"}},[`${S.items.length}件`])]),
       div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
         btn({className:"btn btn-g",onClick:()=>openResponseCsvImport(rebuild)},["📂 回答CSVインポート"]),
+        btn({className:"btn btn-g",style:{background:"rgba(232,69,69,.12)",color:"#ff6b6b",border:"1px solid rgba(232,69,69,.3)"},onClick:()=>openOrderPdfModal()},["🖨️ 発注リスト出力"]),
         btn({className:"btn btn-p",onClick:()=>openItemModal(null,rebuild)},["＋ 新規追加"]),
       ]),
     ]),
@@ -678,7 +679,224 @@ function renderTItems(root){
   rebuild();
 }
 
-// ── 回答CSVインポート ─────────────────────────────────────────────────────────────
+// ── 発注リスト PDF出力 ──────────────────────────────────────────────────────────
+function openOrderPdfModal(){
+  if(!S.items.length){ alert("配布物がありません"); return; }
+
+  // 選択状態（デフォルト全選択）
+  const selected=new Set(S.items.map(i=>i.id));
+  const box=div({className:"mb",style:{maxWidth:"520px"}});
+  const errEl=div({className:"hidden"});
+
+  const itemList=div({style:{display:"flex",flexDirection:"column",gap:"8px"}});
+  S.items.forEach(item=>{
+    const targeted=S.students.filter(s=>{
+      const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+      const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+      return g&&gd;
+    });
+    const answered=targeted.filter(s=>getResp(item.id,s.id)).length;
+    const isOn=selected.has(item.id);
+    const row=div({style:{
+      display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",
+      borderRadius:"8px",border:`1.5px solid ${isOn?"var(--accent)":"var(--border)"}`,
+      background:isOn?"rgba(244,162,40,.08)":"var(--card)",
+      cursor:"pointer",transition:"all .18s",
+    }});
+    const chk=div({style:{
+      width:"18px",height:"18px",borderRadius:"4px",flexShrink:0,
+      border:`2px solid var(--accent)`,
+      background:isOn?"var(--accent)":"transparent",
+      display:"flex",alignItems:"center",justifyContent:"center",
+      fontSize:"11px",color:"#000",fontWeight:700,transition:"all .18s",
+    }},[isOn?"✓":""]);
+    row.append(
+      chk,
+      item.imageUrl?el("img",{src:item.imageUrl,style:{width:"36px",height:"36px",borderRadius:"6px",objectFit:"cover",flexShrink:0}}):
+        div({style:{width:"36px",height:"36px",borderRadius:"6px",background:"var(--navy-light)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0}},["👕"]),
+      div({style:{flex:1}},[
+        div({style:{fontWeight:600,fontSize:"13px"}},[item.name]),
+        div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[`回答済: ${answered}/${targeted.length}名`]),
+      ]),
+    );
+    row.addEventListener("click",()=>{
+      if(selected.has(item.id)){ selected.delete(item.id); row.style.borderColor="var(--border)"; row.style.background="var(--card)"; chk.style.background="transparent"; chk.textContent=""; }
+      else { selected.add(item.id); row.style.borderColor="var(--accent)"; row.style.background="rgba(244,162,40,.08)"; chk.style.background="var(--accent)"; chk.textContent="✓"; }
+    });
+    itemList.append(row);
+  });
+
+  box.append(
+    mhdr("🖨️ 発注リスト出力",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+      div({style:{fontSize:"13px",color:"var(--muted)"}},[`出力する配布物を選択してください（配布物ごとに1ページ）`]),
+      itemList,
+      errEl,
+    ]),
+    div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px",justifyContent:"flex-end"}},[
+      btn({className:"btn btn-g",onClick:()=>ov.remove()},["キャンセル"]),
+      btn({className:"btn btn-p",onClick:()=>{
+        if(!selected.size) return showErr(errEl,"1つ以上選択してください");
+        const items=S.items.filter(i=>selected.has(i.id));
+        ov.remove();
+        generateOrderPdf(items);
+      }},["PDF を生成・印刷"]),
+    ]),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+function generateOrderPdf(items){
+  const clubName=S.cfg.clubName||"清教学園バドミントン部";
+  const today=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
+
+  // 印刷用ウィンドウを開く
+  const win=window.open("","_blank");
+  if(!win){ alert("ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"); return; }
+
+  const pages=items.map(item=>{
+    const targeted=S.students.filter(s=>{
+      const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+      const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+      return g&&gd;
+    });
+    const answered=targeted.filter(s=>getResp(item.id,s.id));
+    const unanswered=targeted.filter(s=>!getResp(item.id,s.id));
+
+    // サイズ集計
+    const sc={};
+    item.sizes.forEach(sz=>sc[sz]=0);
+    answered.forEach(s=>{ const r=getResp(item.id,s.id); if(r) sc[r.size]=(sc[r.size]||0)+1; });
+
+    // 生徒リスト（学年→組→番号順）
+    const sorted=[...answered].sort((a,b)=>
+      a.grade.localeCompare(b.grade)||a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number)
+    );
+
+    // サイズ集計テーブル
+    const sizeRows=item.sizes.map(sz=>`
+      <tr>
+        <td style="font-weight:700;font-size:16px;text-align:center">${sz}</td>
+        <td style="font-size:22px;font-weight:900;text-align:center;color:#1a1a2e">${sc[sz]||0}</td>
+        <td style="font-size:13px;color:#666;text-align:center">着</td>
+      </tr>
+    `).join("");
+
+    // 生徒リスト（3列）
+    const chunkSize=Math.ceil(sorted.length/3)||1;
+    const cols=[sorted.slice(0,chunkSize),sorted.slice(chunkSize,chunkSize*2),sorted.slice(chunkSize*2)];
+    const maxRows=Math.max(...cols.map(c=>c.length));
+    const studentRows=Array.from({length:maxRows},(_,i)=>`
+      <tr>
+        ${cols.map(col=>{
+          const s=col[i];
+          if(!s) return "<td></td><td></td>";
+          const r=getResp(item.id,s.id);
+          return `<td style="font-size:12px;color:#444">${s.grade}年${s.cls}組${s.number}番</td>
+                  <td style="font-size:13px;font-weight:600">${s.name} <span style="display:inline-block;background:#e8f5e9;color:#2e7d32;padding:1px 8px;border-radius:4px;font-size:12px;font-weight:700;margin-left:4px">${r?r.size:"—"}</span></td>`;
+        }).join("")}
+      </tr>
+    `).join("");
+
+    // 未回答リスト
+    const unansweredHtml=unanswered.length?`
+      <div style="margin-top:16px;padding:10px 14px;background:#fff8e1;border-left:4px solid #f9a825;border-radius:4px">
+        <div style="font-size:12px;font-weight:700;color:#f9a825;margin-bottom:6px">⚠ 未回答 ${unanswered.length}名</div>
+        <div style="font-size:12px;color:#666">${unanswered.map(s=>`${s.name}（${s.grade}年${s.cls}組）`).join("　")}</div>
+      </div>
+    `:"";
+
+    // 対象フィルター表示
+    const targetStr=[];
+    if(item.targetGrades&&item.targetGrades.length>0&&item.targetGrades.length<4) targetStr.push(item.targetGrades.map(g=>g+"年").join("・"));
+    if(item.targetGenders&&item.targetGenders.length>0&&item.targetGenders.length<3) targetStr.push(item.targetGenders.map(g=>({male:"男性",female:"女性",other:"その他"}[g]||g)).join("・"));
+
+    return `
+    <div class="page">
+      <!-- ヘッダー -->
+      <div style="display:flex;align-items:center;gap:20px;margin-bottom:20px;padding-bottom:16px;border-bottom:3px solid #1a1a2e">
+        ${item.imageUrl?`<img src="${item.imageUrl}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #ddd">`:
+          `<div style="width:80px;height:80px;background:#f0f0f0;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:36px">👕</div>`}
+        <div style="flex:1">
+          <div style="font-size:24px;font-weight:900;color:#1a1a2e">${item.name}</div>
+          ${item.description?`<div style="font-size:13px;color:#666;margin-top:4px">${item.description}</div>`:""}
+          <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+            ${targetStr.length?`<span style="background:#e3f2fd;color:#1565c0;padding:2px 10px;border-radius:100px;font-size:12px;font-weight:600">${targetStr.join("　")}</span>`:""}
+            <span style="background:#f3e5f5;color:#6a1b9a;padding:2px 10px;border-radius:100px;font-size:12px;font-weight:600">回答 ${answered.length}/${targeted.length}名</span>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:12px;color:#999">${clubName}</div>
+          <div style="font-size:12px;color:#999">${today}</div>
+        </div>
+      </div>
+
+      <!-- サイズ集計 -->
+      <div style="margin-bottom:20px">
+        <div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:8px;border-left:4px solid #1a1a2e;padding-left:10px">📊 サイズ別注文数</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:#1a1a2e;color:#fff">
+              ${item.sizes.map(sz=>`<th style="padding:8px 12px;text-align:center;font-size:14px">${sz}</th>`).join("")}
+              <th style="padding:8px 12px;text-align:center;font-size:14px;background:#333">合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background:#f8f9fa">
+              ${item.sizes.map(sz=>`<td style="padding:10px 12px;text-align:center;font-size:20px;font-weight:900;color:#1a1a2e;border:1px solid #ddd">${sc[sz]||0}</td>`).join("")}
+              <td style="padding:10px 12px;text-align:center;font-size:20px;font-weight:900;color:#e53935;border:1px solid #ddd">${Object.values(sc).reduce((a,b)=>a+b,0)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 生徒別リスト -->
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:8px;border-left:4px solid #1a1a2e;padding-left:10px">👤 生徒別サイズ一覧</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f0f0f0">
+              <th style="padding:6px 8px;text-align:left;border:1px solid #ddd;width:12%">学年/組</th>
+              <th style="padding:6px 8px;text-align:left;border:1px solid #ddd;width:22%">氏名・サイズ</th>
+              <th style="padding:6px 8px;text-align:left;border:1px solid #ddd;width:12%">学年/組</th>
+              <th style="padding:6px 8px;text-align:left;border:1px solid #ddd;width:22%">氏名・サイズ</th>
+              <th style="padding:6px 8px;text-align:left;border:1px solid #ddd;width:12%">学年/組</th>
+              <th style="padding:6px 8px;text-align:left;border:1px solid #ddd;width:22%">氏名・サイズ</th>
+            </tr>
+          </thead>
+          <tbody>${studentRows}</tbody>
+        </table>
+      </div>
+
+      ${unansweredHtml}
+    </div>
+    `;
+  }).join("");
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>${clubName} 発注リスト</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Hiragino Sans','Noto Sans JP',sans-serif;background:#fff;color:#1a1a2e}
+  .page{padding:24px 28px;page-break-after:always;min-height:100vh}
+  .page:last-child{page-break-after:auto}
+  table{border-collapse:collapse}
+  td,th{border:1px solid #ddd;padding:6px 8px}
+  tr:nth-child(even) td{background:#fafafa}
+  @media print{
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .page{padding:16px 20px}
+  }
+</style>
+</head>
+<body>${pages}</body>
+</html>`);
+  win.document.close();
+  setTimeout(()=>win.print(),800);
+}
 // フォーマット: タイムスタンプ,メール,名前,携帯(生徒),携帯(保護者),シューズ,短パン,ゲームシャツ,Tシャツ半袖,Tシャツ長袖,...
 // 列インデックス: 0=タイムスタンプ, 1=メール, 2=名前, 5=シューズ(スキップ), 6=短パン, 7=ゲームシャツ, 8=T半袖, 9=T長袖
 function openResponseCsvImport(onSave){
