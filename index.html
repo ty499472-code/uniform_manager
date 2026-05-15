@@ -1727,7 +1727,19 @@ function openTournamentModal(onSave,existing=null){
       const t={id:existing?.id||genId(), name:name.trim(), date, note:note.trim(), createdAt:existing?.createdAt||new Date().toISOString()};
       await DB.saveTournament(t);
       if(existing){ const i=S.tournaments.findIndex(x=>x.id===t.id); if(i>=0)S.tournaments[i]=t; else S.tournaments.push(t); }
-      else S.tournaments.push(t);
+      else {
+        S.tournaments.push(t);
+        // 大会登録時に自動でチャットルームを作成
+        const room={
+          id:`tournament_${t.id}`,
+          name:`🏆 ${t.name}`,
+          sub:t.date||"",
+          tournamentId:t.id,
+          createdAt:new Date().toISOString(),
+        };
+        await DB.saveChatRoom(room);
+        S.chatRooms.push(room);
+      }
       ov.remove(); onSave();
     },existing?"更新":"登録"),
   );
@@ -3030,67 +3042,140 @@ async function renderChat(root, userId, userName, isTeacher=false){
   S.chatRooms=await DB.getChatRooms();
   root.innerHTML="";
 
-  const allRooms=[
-    {id:"all",    name:"📢 全体チャット",      sub:"部員・教員全員",   fixed:true},
-    {id:"staff",  name:"👨‍🏫 教員・指導者専用", sub:"教員・指導者のみ", fixed:true, staffOnly:true},
-    ...S.chatRooms,
+  // 自分の参加ルームをlocalStorageで管理（DB保存なし・端末ごと）
+  const myRoomsKey=`my_rooms_${userId}`;
+  let myRoomIds=new Set(JSON.parse(localStorage.getItem(myRoomsKey)||"[]"));
+  const saveMyRooms=()=>localStorage.setItem(myRoomsKey,JSON.stringify([...myRoomIds]));
+  // 今日の会場ルームIDをlocalStorageで管理
+  const todayVenueKey=`today_venue_${userId}`;
+  let todayVenueId=localStorage.getItem(todayVenueKey)||"";
+
+  // ルーム構造：固定 + 大会ルーム（大会チャット配下に会場サブルームを表示） + 自由グループ
+  const fixedRooms=[
+    {id:"all",   name:"📢 全体チャット",      sub:"部員・教員全員", fixed:true},
+    {id:"staff", name:"👨‍🏫 教員・指導者専用", sub:"教員・指導者のみ", fixed:true, staffOnly:true},
   ];
+  // 大会ルーム（tournamentId付き）と通常グループを分離
+  const tournamentRooms=S.chatRooms.filter(r=>r.tournamentId);
+  const groupRooms    =S.chatRooms.filter(r=>!r.tournamentId);
+  // 会場ルーム（parentRoomId付き）
+  const venueRooms    =S.chatRooms.filter(r=>r.isVenue);
+
+  const allRooms=[...fixedRooms,...S.chatRooms];
+  const visibleRooms=isTeacher?allRooms:allRooms.filter(r=>!r.staffOnly);
 
   const hdr=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}});
   hdr.append(div({style:{fontSize:"20px",fontWeight:700}},["💬 チャット"]));
   if(isTeacher){
     hdr.append(btn({className:"btn btn-p",onClick:()=>openChatRoomModal(null,async()=>{
-      S.chatRooms=await DB.getChatRooms();
-      renderChat(root,userId,userName,true);
+      S.chatRooms=await DB.getChatRooms(); renderChat(root,userId,userName,true);
     })},["＋ グループを作成"]));
   }
-
-  const leftCol=div({style:{flex:"0 0 220px",minWidth:0,display:"flex",flexDirection:"column",gap:"6px"}});
+  const leftCol=div({style:{flex:"0 0 230px",minWidth:0,display:"flex",flexDirection:"column",gap:"4px"}});
   const rightCol=div({style:{flex:"1 1 0",minWidth:0}});
   root.append(hdr, div({style:{display:"flex",gap:"16px",alignItems:"flex-start",flexWrap:"wrap"}},[leftCol,rightCol]));
 
-  // 生徒には staffOnly ルームを非表示
-  const visibleRooms=isTeacher?allRooms:allRooms.filter(r=>!r.staffOnly);
+  let activeRoomId=null;
+  const readMarks=await DB.getReadMarks(userId);
 
   const buildRoomList=async()=>{
     leftCol.innerHTML="";
     for(const room of visibleRooms){
+      // 会場サブルームはここでは表示しない（大会ルームの中で表示）
+      if(room.isVenue) continue;
+
       const msgs=await DB.getChatMessages(room.id);
       const lastRead=readMarks[room.id]||"";
       const unread=msgs.filter(m=>m.createdAt>lastRead&&m.senderId!==userId).length;
       const isActive=activeRoomId===room.id;
+
       const card=div({style:{
-        padding:"10px 12px",borderRadius:"8px",cursor:"pointer",transition:"all .18s",
+        padding:"9px 11px",borderRadius:"8px",cursor:"pointer",transition:"all .15s",
         border:`1.5px solid ${isActive?"var(--accent)":"var(--border)"}`,
         background:isActive?"rgba(244,162,40,.1)":"var(--card)",
       }});
       const nameRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}});
       nameRow.append(
-        div({style:{fontWeight:600,fontSize:"13px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[room.name]),
-        unread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"1px 7px",fontSize:"10px",fontWeight:700,flexShrink:0}},[String(unread)]):"",
+        div({style:{fontWeight:600,fontSize:"12px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[room.name]),
+        unread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"1px 6px",fontSize:"10px",fontWeight:700,flexShrink:0}},[String(unread)]):"",
       );
+      // 教員：会場追加・編集・削除ボタン
       if(isTeacher&&!room.fixed){
-        nameRow.append(div({style:{display:"flex",gap:"3px",flexShrink:0}},[
-          btn({className:"btn btn-g sm",style:{padding:"2px 7px",fontSize:"10px"},onClick:async e=>{
+        const btns=div({style:{display:"flex",gap:"2px",flexShrink:0}});
+        if(room.tournamentId){
+          btns.append(btn({className:"btn btn-b sm",style:{padding:"1px 6px",fontSize:"10px"},onClick:async e=>{
             e.stopPropagation();
-            openChatRoomModal(room,async()=>{ S.chatRooms=await DB.getChatRooms(); renderChat(root,userId,userName,true); });
-          }},["編集"]),
-          btn({className:"btn btn-d sm",style:{padding:"2px 7px",fontSize:"10px"},onClick:async e=>{
+            openVenueModal(room,async()=>{ S.chatRooms=await DB.getChatRooms(); renderChat(root,userId,userName,true); });
+          }},["＋会場"]));
+        }
+        btns.append(
+          btn({className:"btn btn-d sm",style:{padding:"1px 6px",fontSize:"10px"},onClick:async e=>{
             e.stopPropagation();
             if(!confirm(`「${room.name}」を削除しますか？`))return;
             await DB.deleteChatRoom(room.id);
             S.chatRooms=S.chatRooms.filter(r=>r.id!==room.id);
             renderChat(root,userId,userName,true);
           }},["削除"]),
-        ]));
+        );
+        nameRow.append(btns);
       }
       card.append(
         nameRow,
-        room.sub?div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[room.sub]):"",
-        msgs.length?div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[msgs[msgs.length-1].senderName+": "+msgs[msgs.length-1].text]):"",
+        room.sub?div({style:{fontSize:"10px",color:"var(--muted)",marginTop:"2px"}},[room.sub]):"",
+        msgs.length?div({style:{fontSize:"10px",color:"var(--muted)",marginTop:"3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[msgs[msgs.length-1].senderName+": "+msgs[msgs.length-1].text]):"",
       );
       card.addEventListener("click",()=>{ activeRoomId=room.id; buildRoomList(); openRoom(room); });
       leftCol.append(card);
+
+      // 大会ルームの会場サブルームをインデントして表示
+      if(room.tournamentId){
+        const venues=S.chatRooms.filter(r=>r.isVenue&&r.parentRoomId===room.id);
+        for(const v of venues){
+          const isMine=myRoomIds.has(v.id);
+          const isToday=todayVenueId===v.id;
+          if(!isMine&&!isTeacher) continue; // 参加していない選手には非表示
+          const vMsgs=await DB.getChatMessages(v.id);
+          const vLastRead=readMarks[v.id]||"";
+          const vUnread=vMsgs.filter(m=>m.createdAt>vLastRead&&m.senderId!==userId).length;
+          const vActive=activeRoomId===v.id;
+          const vCard=div({style:{
+            padding:"7px 11px 7px 20px",borderRadius:"8px",cursor:"pointer",transition:"all .15s",
+            border:`1.5px solid ${vActive?"var(--accent)":isToday?"rgba(46,204,113,.4)":"var(--border)"}`,
+            background:vActive?"rgba(244,162,40,.1)":isToday?"rgba(46,204,113,.06)":"var(--card)",
+            marginLeft:"8px",
+          }});
+          const vNameRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}});
+          vNameRow.append(
+            div({style:{fontWeight:600,fontSize:"12px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:isToday?"var(--green)":"var(--text)"}},[
+              (isToday?"📍 ":"")+v.name
+            ]),
+            vUnread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"1px 6px",fontSize:"10px",fontWeight:700}},[String(vUnread)]):"",
+          );
+          if(isTeacher){
+            vNameRow.append(btn({className:"btn btn-d sm",style:{padding:"1px 6px",fontSize:"10px"},onClick:async e=>{
+              e.stopPropagation();
+              if(!confirm(`「${v.name}」を削除しますか？`))return;
+              await DB.deleteChatRoom(v.id);
+              S.chatRooms=S.chatRooms.filter(r=>r.id!==v.id);
+              renderChat(root,userId,userName,true);
+            }},["削除"]));
+          }
+          vCard.append(vNameRow);
+          vCard.addEventListener("click",()=>{ activeRoomId=v.id; buildRoomList(); openRoom(v); });
+          leftCol.append(vCard);
+        }
+
+        // 選手：会場ルームへの参加ボタン
+        if(!isTeacher){
+          const allVenues=S.chatRooms.filter(r=>r.isVenue&&r.parentRoomId===room.id);
+          if(allVenues.length){
+            const joinBtn=btn({className:"btn btn-g sm",style:{marginLeft:"8px",fontSize:"11px",marginBottom:"4px"},onClick:()=>openVenueJoinModal(allVenues,room,async()=>{
+              S.chatRooms=await DB.getChatRooms(); buildRoomList();
+            })},["📍 会場を選ぶ"]);
+            leftCol.append(joinBtn);
+          }
+        }
+      }
     }
   };
 
@@ -3100,8 +3185,11 @@ async function renderChat(root, userId, userName, isTeacher=false){
     await DB.markRead(userId,room.id);
     readMarks[room.id]=new Date().toISOString();
 
+    const isVenueRoom=room.isVenue;
+    const isToday=todayVenueId===room.id;
+
     const msgArea=div({style:{
-      height:"420px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"8px",
+      height:isVenueRoom?"360px":"420px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"8px",
       padding:"16px",background:"var(--navy)",borderRadius:"10px",marginBottom:"12px",
     }});
 
@@ -3114,6 +3202,11 @@ async function renderChat(root, userId, userName, isTeacher=false){
       messages.forEach(m=>{
         const isMe=m.senderId===userId;
         const isTeacherMsg=m.senderId==="__teacher__";
+        // 会場設定メッセージは特別表示
+        if(m.isVenueAnnounce){
+          msgArea.append(div({style:{textAlign:"center",padding:"8px 16px",margin:"4px 0",background:"rgba(46,204,113,.1)",borderRadius:"8px",border:"1px solid rgba(46,204,113,.3)",fontSize:"13px",color:"var(--green)"}},[`📍 ${m.text}`]));
+          return;
+        }
         const bubble=div({style:{display:"flex",flexDirection:"column",alignItems:isMe?"flex-end":"flex-start",marginBottom:"4px"}});
         bubble.append(
           div({style:{fontSize:"10px",color:"var(--muted)",marginBottom:"2px",[isMe?"paddingRight":"paddingLeft"]:"4px"}},[isTeacherMsg?"🏫 "+m.senderName:m.senderName]),
@@ -3135,6 +3228,43 @@ async function renderChat(root, userId, userName, isTeacher=false){
     };
     renderMsgs(msgs);
 
+    // 会場ルームの場合：「本日の会場をここにする」ボタン
+    let venueBar="";
+    if(isVenueRoom&&!isTeacher){
+      const todayBtn=btn({
+        className:isToday?"btn btn-g":"btn btn-p",
+        style:{width:"100%",justifyContent:"center",padding:"10px 0",marginBottom:"10px",
+          background:isToday?"rgba(46,204,113,.15)":"",
+          color:isToday?"var(--green)":"",
+          border:isToday?"1px solid rgba(46,204,113,.4)":"",
+        },
+        onClick:async()=>{
+          if(isToday){
+            // 解除
+            todayVenueId=""; localStorage.removeItem(todayVenueKey);
+          } else {
+            todayVenueId=room.id; localStorage.setItem(todayVenueKey,room.id);
+            // 全体チャットに会場通知メッセージを送信
+            const announceMsg={
+              id:genId(), roomId:"all", senderId:userId, senderName:userName,
+              text:`${userName} が本日の会場を「${room.name}」に設定しました`,
+              isVenueAnnounce:true, createdAt:new Date().toISOString(),
+            };
+            await DB.sendChatMessage("all",announceMsg);
+            // Firestoreに通知フラグを書き込む（GASが検知してメール送信）
+            try{
+              await setDoc(doc(db,"notifications",`venue_${userId}`),{
+                text:`${userName} が本日の会場を「${room.name}」に設定しました`,
+                updatedAt:new Date().toISOString(), notified:false,
+              });
+            }catch(_){}
+          }
+          buildRoomList(); openRoom(room);
+        },
+      },[isToday?"✅ 本日の会場："+room.name+"（解除する）":"📍 本日の会場をここにする"]);
+      venueBar=todayBtn;
+    }
+
     let inputText="";
     const textI=ta({className:"inp",rows:2},""); textI.placeholder="メッセージを入力...（Enterで送信）"; textI.style.resize="none";
     textI.addEventListener("input",e=>inputText=e.target.value);
@@ -3148,7 +3278,11 @@ async function renderChat(root, userId, userName, isTeacher=false){
     textI.addEventListener("keydown",async e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); await sendMsg(); } });
 
     rightCol.append(
-      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",paddingBottom:"8px",borderBottom:"1px solid var(--border)"}},[room.name]),
+      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"8px",paddingBottom:"8px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:"8px"}},[
+        room.name,
+        isVenueRoom&&isToday?span({style:{fontSize:"11px",color:"var(--green)",fontWeight:700}},["📍 本日の会場"]):""
+      ]),
+      venueBar||"",
       msgArea,
       div({style:{display:"flex",gap:"8px",alignItems:"flex-end"}},[
         div({style:{flex:1}},[textI]),
@@ -3158,10 +3292,88 @@ async function renderChat(root, userId, userName, isTeacher=false){
   };
 
   await buildRoomList();
-  if(visibleRooms.length){ activeRoomId=visibleRooms[0].id; buildRoomList(); openRoom(visibleRooms[0]); }
+  if(visibleRooms.filter(r=>!r.isVenue).length){
+    const first=visibleRooms.find(r=>!r.isVenue);
+    activeRoomId=first.id; buildRoomList(); openRoom(first);
+  }
 }
 
-function openChatRoomModal(existing, onSave){
+// 会場ルーム作成モーダル（教員用）
+function openVenueModal(parentRoom, onSave){
+  let name="";
+  const box=div({className:"mb",style:{maxWidth:"400px"}}); const errEl=div({className:"hidden"});
+  const nameI=inp({className:"inp",placeholder:"例：第1体育館・A会場"}); nameI.addEventListener("input",e=>name=e.target.value);
+  box.append(
+    mhdr("📍 会場ルームを追加",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"14px"}},[
+      div({style:{fontSize:"13px",color:"var(--muted)"}},[`「${parentRoom.name}」に会場ルームを追加します`]),
+      ff("会場名 *",nameI), errEl,
+    ]),
+    mftr(()=>ov.remove(),async()=>{
+      if(!name.trim()) return showErr(errEl,"会場名を入力してください");
+      const room={
+        id:genId(), name:`📍 ${name.trim()}`, sub:parentRoom.name,
+        isVenue:true, parentRoomId:parentRoom.id,
+        tournamentId:parentRoom.tournamentId,
+        createdAt:new Date().toISOString(),
+      };
+      await DB.saveChatRoom(room);
+      S.chatRooms.push(room);
+      ov.remove(); onSave();
+    },"追加"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+// 会場ルーム参加モーダル（選手用）
+function openVenueJoinModal(venues, parentRoom, onSave){
+  const myRoomsKey=`my_rooms_${S.sid}`;
+  let myRoomIds=new Set(JSON.parse(localStorage.getItem(myRoomsKey)||"[]"));
+
+  const box=div({className:"mb",style:{maxWidth:"400px"}});
+  const list=div({style:{display:"flex",flexDirection:"column",gap:"8px"}});
+
+  venues.forEach(v=>{
+    const isMine=myRoomIds.has(v.id);
+    const row=div({style:{
+      padding:"12px 14px",borderRadius:"8px",cursor:"pointer",transition:"all .15s",
+      border:`1.5px solid ${isMine?"var(--green)":"var(--border)"}`,
+      background:isMine?"rgba(46,204,113,.08)":"var(--card)",
+      display:"flex",justifyContent:"space-between",alignItems:"center",
+    }},[
+      div({},[
+        div({style:{fontWeight:700,fontSize:"14px"}},[v.name]),
+        isMine?span({style:{fontSize:"11px",color:"var(--green)"}},[" 参加中"]):"",
+      ]),
+      isMine?
+        btn({className:"btn btn-d sm",onClick:async e=>{
+          e.stopPropagation();
+          myRoomIds.delete(v.id);
+          localStorage.setItem(myRoomsKey,JSON.stringify([...myRoomIds]));
+          ov.remove(); onSave();
+        }},["退出"]):
+        btn({className:"btn btn-p sm",onClick:async e=>{
+          e.stopPropagation();
+          myRoomIds.add(v.id);
+          localStorage.setItem(myRoomsKey,JSON.stringify([...myRoomIds]));
+          ov.remove(); onSave();
+        }},["参加"]),
+    ]);
+    list.append(row);
+  });
+
+  box.append(
+    mhdr(`📍 ${parentRoom.name}の会場を選ぶ`,()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"14px"}},[
+      div({style:{fontSize:"13px",color:"var(--muted)"}},[`自分が出場する会場のルームに参加してください。`]),
+      list,
+    ]),
+    div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end"}},[
+      btn({className:"btn btn-g",onClick:()=>ov.remove()},["閉じる"]),
+    ]),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
   let name=existing?.name||"", sub=existing?.sub||"";
   const box=div({className:"mb",style:{maxWidth:"400px"}}); const errEl=div({className:"hidden"});
   const nameI=inp({className:"inp",placeholder:"例：春季大会グループ",value:name}); nameI.addEventListener("input",e=>name=e.target.value);
@@ -3250,6 +3462,7 @@ function checkNotifications() {
   checkNewChatMessages();
   checkDeadlines();
   checkGreeting();
+  checkVenueAnnouncements();
 }
 
 // ─── チャット新着通知 ────────────────────────────────────────
@@ -3379,6 +3592,42 @@ function checkDeadlines() {
 
   props.setProperty(notifiedKey, JSON.stringify(notified));
 }
+
+// ─── 会場設定通知 ────────────────────────────────────────────
+function checkVenueAnnouncements() {
+  // notifications/venue_{userId} ドキュメントをチェック
+  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications?key=\${FIREBASE_API_KEY}\`;
+  const res = UrlFetchApp.fetch(url, {muteHttpExceptions:true});
+  if(res.getResponseCode()!==200) return;
+  const data = JSON.parse(res.getContentText());
+  if(!data.documents) return;
+
+  data.documents.forEach(doc => {
+    const id = doc.name.split("/").pop();
+    if(!id.startsWith("venue_")) return;
+    const notified = doc.fields?.notified?.booleanValue;
+    const text     = fVal(doc.fields?.text);
+    if(notified||!text) return;
+
+    const subject  = \`[\${CLUB_NAME}] 📍 会場のお知らせ\`;
+    const htmlBody = \`
+      <div style="font-family:sans-serif;max-width:600px">
+        <h2 style="color:#2ECC71;border-bottom:2px solid #2ECC71;padding-bottom:8px">📍 会場のお知らせ</h2>
+        <div style="margin:16px 0;padding:16px;background:#f0fff4;border-radius:8px;border-left:4px solid #2ECC71;font-size:15px">\${text}</div>
+        <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
+      </div>
+    \`;
+    getAllEmails().forEach(email => {
+      try { GmailApp.sendEmail(email, subject, text, {htmlBody}); } catch(e) {}
+    });
+    // 送信済みフラグ
+    const patchUrl = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications/\${id}?key=\${FIREBASE_API_KEY}\`;
+    UrlFetchApp.fetch(patchUrl,{method:"PATCH",contentType:"application/json",
+      payload:JSON.stringify({fields:{text:{stringValue:text},notified:{booleanValue:true},updatedAt:{timestampValue:new Date().toISOString()}}}),
+      muteHttpExceptions:true});
+  });
+}\`
++`
 
 // ─── お知らせ通知 ────────────────────────────────────────────
 function checkGreeting() {
