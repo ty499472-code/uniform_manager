@@ -3374,6 +3374,8 @@ function openVenueJoinModal(venues, parentRoom, onSave){
   );
   const ov=overlay(box,()=>ov.remove());
 }
+
+function openChatRoomModal(existing, onSave){
   let name=existing?.name||"", sub=existing?.sub||"";
   const box=div({className:"mb",style:{maxWidth:"400px"}}); const errEl=div({className:"hidden"});
   const nameI=inp({className:"inp",placeholder:"例：春季大会グループ",value:name}); nameI.addEventListener("input",e=>name=e.target.value);
@@ -3399,275 +3401,181 @@ function generateGasCode(){
   const studentEmails=S.students.filter(s=>s.email).map(s=>`"${s.email}"`).join(",\n    ");
   const coachEmails=(S.cfg.coaches||[]).filter(c=>c.email).map(c=>`"${c.email}" /* ${c.name} */`).join(",\n    ");
 
-  return `// ============================================================
-// ${clubName} 選手管理システム - メール通知スクリプト
-// Google Apps Script に貼り付けて使用してください
-// トリガー設定：checkNotifications を3分ごとに実行
-// ============================================================
-
-const FIREBASE_PROJECT_ID = "${projectId}";
-const FIREBASE_API_KEY    = "${apiKey}";
-const CLUB_NAME           = "${clubName}";
-const TEACHER_EMAIL       = "${teacherEmail}";
-
-// 生徒のメールアドレス
-const STUDENT_EMAILS = [
-    ${studentEmails||'// メールアドレスが登録されていません'}
-];
-
-// 指導者のメールアドレス
-const COACH_EMAILS = [
-    ${coachEmails||'// 指導者が登録されていません'}
-];
-
-// 全通知先（教員 + 生徒 + 指導者）
-function getAllEmails() {
-  const all = [...STUDENT_EMAILS, ...COACH_EMAILS];
-  if (TEACHER_EMAIL) all.push(TEACHER_EMAIL);
-  return [...new Set(all)]; // 重複除去
-}
-
-// 教員・指導者のみへの通知先
-function getStaffEmails() {
-  const all = [...COACH_EMAILS];
-  if (TEACHER_EMAIL) all.push(TEACHER_EMAIL);
-  return [...new Set(all)];
-}
-
-// Firestore REST API でドキュメント取得
-function fsGet(path) {
-  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/\${path}?key=\${FIREBASE_API_KEY}\`;
-  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
-  if (res.getResponseCode() !== 200) return null;
-  return JSON.parse(res.getContentText());
-}
-
-// Firestore REST API でコレクション取得
-function fsList(collection) {
-  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/\${collection}?key=\${FIREBASE_API_KEY}\`;
-  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
-  if (res.getResponseCode() !== 200) return [];
-  const data = JSON.parse(res.getContentText());
-  return data.documents || [];
-}
-
-// Firestoreのフィールド値を取得するヘルパー
-function fVal(field) {
-  if (!field) return null;
-  return field.stringValue ?? field.integerValue ?? field.booleanValue ?? field.timestampValue ?? null;
-}
-
-// ─── メイン関数（3分ごとに実行）──────────────────────────────
-function checkNotifications() {
-  checkNewChatMessages();
-  checkDeadlines();
-  checkGreeting();
-  checkVenueAnnouncements();
-}
-
-// ─── チャット新着通知 ────────────────────────────────────────
-function checkNewChatMessages() {
-  const props = PropertiesService.getScriptProperties();
-  const lastCheckKey = "LAST_CHAT_CHECK";
-  const lastCheck = props.getProperty(lastCheckKey) || new Date(0).toISOString();
-
-  // チャットルーム一覧取得
-  const rooms = fsList("chat_rooms");
-  const allRoomIds = ["all", ...rooms.map(r => r.name.split("/").pop())];
-
-  const newMessages = [];
-
-  allRoomIds.forEach(roomId => {
-    const msgs = fsList(\`chat_\${roomId}\`);
-    msgs.forEach(m => {
-      const createdAt = fVal(m.fields?.createdAt);
-      const text      = fVal(m.fields?.text);
-      const sender    = fVal(m.fields?.senderName);
-      if (createdAt && createdAt > lastCheck && text) {
-        const roomName = roomId === "all" ? "全体チャット" :
-          (rooms.find(r => r.name.split("/").pop() === roomId)?.fields?.name
-            ? fVal(rooms.find(r => r.name.split("/").pop() === roomId).fields.name)
-            : roomId);
-        newMessages.push({ roomName, sender, text, createdAt });
-      }
-    });
-  });
-
-  if (newMessages.length === 0) {
-    props.setProperty(lastCheckKey, new Date().toISOString());
-    return;
-  }
-
-  // ルームごとにグループ化してメール送信（件名=ルーム名でスレッド化）
-  const byRoom = {};
-  newMessages.forEach(m => {
-    if (!byRoom[m.roomName]) byRoom[m.roomName] = [];
-    byRoom[m.roomName].push(m);
-  });
-
-  getAllEmails().forEach(email => {
-    Object.entries(byRoom).forEach(([roomName, msgs]) => {
-      // 教員・指導者専用ルームは教員・指導者のみに送信
-      const isStaffRoom = roomName.includes("教員・指導者");
-      const targets = isStaffRoom ? getStaffEmails() : getAllEmails();
-      if (!targets.includes(email)) return;
-      const subject = \`[\${CLUB_NAME}] \${roomName}\`;
-      const body = msgs.map(m => \`\${m.sender}: \${m.text}\`).join("\\n");
-      const htmlBody = \`
-        <div style="font-family:sans-serif;max-width:600px">
-          <h2 style="color:#F4A228;border-bottom:2px solid #F4A228;padding-bottom:8px">
-            💬 \${roomName}
-          </h2>
-          \${msgs.map(m => \`
-            <div style="margin:12px 0;padding:12px;background:#f5f5f5;border-radius:8px;border-left:4px solid #F4A228">
-              <div style="font-size:12px;color:#666;margin-bottom:4px">\${new Date(m.createdAt).toLocaleString("ja-JP")}</div>
-              <div style="font-weight:bold">\${m.sender}</div>
-              <div style="margin-top:4px">\${m.text}</div>
-            </div>
-          \`).join("")}
-          <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
-        </div>
-      \`;
-      try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
-    });
-  });
-
-  props.setProperty(lastCheckKey, new Date().toISOString());
-}
-
-// ─── 締切3日前通知 ───────────────────────────────────────────
-function checkDeadlines() {
-  const props = PropertiesService.getScriptProperties();
-  const now   = new Date();
-  const in3   = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-
-  const items = fsList("items");
-  const notifiedKey = "DEADLINE_NOTIFIED";
-  const notified = JSON.parse(props.getProperty(notifiedKey) || "{}");
-
-  const targets = [];
-
-  items.forEach(item => {
-    const id       = item.name.split("/").pop();
-    const name     = fVal(item.fields?.name);
-    const deadline = fVal(item.fields?.deadline);
-    if (!deadline || !name) return;
-
-    const dl = new Date(deadline);
-    if (dl < now || dl > in3) return; // 期限切れ or 3日以上先はスキップ
-
-    const dateKey = dl.toDateString();
-    if (notified[id] === dateKey) return; // 今日すでに通知済み
-
-    targets.push({ id, name, deadline: dl });
-    notified[id] = dateKey;
-  });
-
-  if (targets.length === 0) return;
-
-  const subject = \`[\${CLUB_NAME}] 配布物の締切が近づいています\`;
-  const body = targets.map(t =>
-    \`「\${t.name}」の締切：\${t.deadline.toLocaleString("ja-JP")}\`
-  ).join("\\n");
-
-  const htmlBody = \`
-    <div style="font-family:sans-serif;max-width:600px">
-      <h2 style="color:#E84545;border-bottom:2px solid #E84545;padding-bottom:8px">
-        ⏰ 締切3日前のお知らせ
-      </h2>
-      \${targets.map(t => \`
-        <div style="margin:12px 0;padding:12px;background:#fff3f3;border-radius:8px;border-left:4px solid #E84545">
-          <div style="font-weight:bold;font-size:15px">\${t.name}</div>
-          <div style="color:#E84545;margin-top:4px">締切：\${t.deadline.toLocaleString("ja-JP")}</div>
-          <div style="font-size:12px;color:#666;margin-top:4px">まだ回答していない方は早めに回答してください。</div>
-        </div>
-      \`).join("")}
-      <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
-    </div>
-  \`;
-
-  getAllEmails().forEach(email => {
-    try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
-  });
-
-  props.setProperty(notifiedKey, JSON.stringify(notified));
-}
-
-// ─── 会場設定通知 ────────────────────────────────────────────
-function checkVenueAnnouncements() {
-  // notifications/venue_{userId} ドキュメントをチェック
-  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications?key=\${FIREBASE_API_KEY}\`;
-  const res = UrlFetchApp.fetch(url, {muteHttpExceptions:true});
-  if(res.getResponseCode()!==200) return;
-  const data = JSON.parse(res.getContentText());
-  if(!data.documents) return;
-
-  data.documents.forEach(doc => {
-    const id = doc.name.split("/").pop();
-    if(!id.startsWith("venue_")) return;
-    const notified = doc.fields?.notified?.booleanValue;
-    const text     = fVal(doc.fields?.text);
-    if(notified||!text) return;
-
-    const subject  = \`[\${CLUB_NAME}] 📍 会場のお知らせ\`;
-    const htmlBody = \`
-      <div style="font-family:sans-serif;max-width:600px">
-        <h2 style="color:#2ECC71;border-bottom:2px solid #2ECC71;padding-bottom:8px">📍 会場のお知らせ</h2>
-        <div style="margin:16px 0;padding:16px;background:#f0fff4;border-radius:8px;border-left:4px solid #2ECC71;font-size:15px">\${text}</div>
-        <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
-      </div>
-    \`;
-    getAllEmails().forEach(email => {
-      try { GmailApp.sendEmail(email, subject, text, {htmlBody}); } catch(e) {}
-    });
-    // 送信済みフラグ
-    const patchUrl = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications/\${id}?key=\${FIREBASE_API_KEY}\`;
-    UrlFetchApp.fetch(patchUrl,{method:"PATCH",contentType:"application/json",
-      payload:JSON.stringify({fields:{text:{stringValue:text},notified:{booleanValue:true},updatedAt:{timestampValue:new Date().toISOString()}}}),
-      muteHttpExceptions:true});
-  });
-}
-
-// ─── お知らせ通知 ────────────────────────────────────────────
-function checkGreeting() {
-  const data = fsGet("notifications/greeting");
-  if (!data) return;
-
-  const notified = data.fields?.notified?.booleanValue;
-  const text     = fVal(data.fields?.text);
-  if (notified || !text) return;
-
-  const subject  = \`[\${CLUB_NAME}] 📢 お知らせ\`;
-  const body     = text;
-  const htmlBody = \`
-    <div style="font-family:sans-serif;max-width:600px">
-      <h2 style="color:#4A9EFF;border-bottom:2px solid #4A9EFF;padding-bottom:8px">
-        📢 \${CLUB_NAME} からのお知らせ
-      </h2>
-      <div style="margin:16px 0;padding:16px;background:#f0f7ff;border-radius:8px;border-left:4px solid #4A9EFF;font-size:15px;line-height:1.8">
-        \${text.replace(/\\n/g,"<br>")}
-      </div>
-      <p style="font-size:12px;color:#999;margin-top:20px">${clubName} 選手管理システム</p>
-    </div>
-  \`;
-
-  getAllEmails().forEach(email => {
-    try { GmailApp.sendEmail(email, subject, body, { htmlBody }); } catch(e) {}
-  });
-
-  // 送信済みフラグを立てる（次回から再送しない）
-  const url = \`https://firestore.googleapis.com/v1/projects/\${FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications/greeting?key=\${FIREBASE_API_KEY}\`;
-  UrlFetchApp.fetch(url, {
-    method: "PATCH",
-    contentType: "application/json",
-    payload: JSON.stringify({ fields: {
-      text:      { stringValue: text },
-      notified:  { booleanValue: true },
-      updatedAt: { timestampValue: new Date().toISOString() },
-    }}),
-    muteHttpExceptions: true,
-  });
-}`;
+  // GASコードを配列で組み立て（テンプレートリテラルを避けてSyntaxErrorを防止）
+  const lines = [
+    "// ============================================================",
+    "// " + clubName + " 選手管理システム - メール通知スクリプト",
+    "// Google Apps Script に貼り付けて使用してください",
+    "// トリガー設定：checkNotifications を3分ごとに実行",
+    "// ============================================================",
+    "",
+    "const FIREBASE_PROJECT_ID = \"" + projectId + "\";",
+    "const FIREBASE_API_KEY    = \"" + apiKey + "\";",
+    "const CLUB_NAME           = \"" + clubName + "\";",
+    "const TEACHER_EMAIL       = \"" + teacherEmail + "\";",
+    "",
+    "// 生徒のメールアドレス",
+    "const STUDENT_EMAILS = [",
+    "    " + (studentEmails||"// メールアドレスが登録されていません"),
+    "];",
+    "",
+    "// 指導者のメールアドレス",
+    "const COACH_EMAILS = [",
+    "    " + (coachEmails||"// 指導者が登録されていません"),
+    "];",
+    "",
+    "function getAllEmails() {",
+    "  const all = [...STUDENT_EMAILS, ...COACH_EMAILS];",
+    "  if (TEACHER_EMAIL) all.push(TEACHER_EMAIL);",
+    "  return [...new Set(all)];",
+    "}",
+    "",
+    "function getStaffEmails() {",
+    "  const all = [...COACH_EMAILS];",
+    "  if (TEACHER_EMAIL) all.push(TEACHER_EMAIL);",
+    "  return [...new Set(all)];",
+    "}",
+    "",
+    "function fsGet(path) {",
+    "  const url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents/' + path + '?key=' + FIREBASE_API_KEY;",
+    "  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});",
+    "  if (res.getResponseCode() !== 200) return null;",
+    "  return JSON.parse(res.getContentText());",
+    "}",
+    "",
+    "function fsList(col) {",
+    "  const url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents/' + col + '?key=' + FIREBASE_API_KEY;",
+    "  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});",
+    "  if (res.getResponseCode() !== 200) return [];",
+    "  const data = JSON.parse(res.getContentText());",
+    "  return data.documents || [];",
+    "}",
+    "",
+    "function fPatch(path, fields) {",
+    "  const url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents/' + path + '?key=' + FIREBASE_API_KEY;",
+    "  UrlFetchApp.fetch(url, {method:'PATCH', contentType:'application/json', payload:JSON.stringify({fields:fields}), muteHttpExceptions:true});",
+    "}",
+    "",
+    "function fVal(field) {",
+    "  if (!field) return null;",
+    "  return field.stringValue != null ? field.stringValue : field.integerValue != null ? field.integerValue : field.booleanValue != null ? field.booleanValue : field.timestampValue != null ? field.timestampValue : null;",
+    "}",
+    "",
+    "function checkNotifications() {",
+    "  checkNewChatMessages();",
+    "  checkDeadlines();",
+    "  checkGreeting();",
+    "  checkVenueAnnouncements();",
+    "}",
+    "",
+    "function checkNewChatMessages() {",
+    "  const props = PropertiesService.getScriptProperties();",
+    "  const lastCheckKey = 'LAST_CHAT_CHECK';",
+    "  const lastCheck = props.getProperty(lastCheckKey) || new Date(0).toISOString();",
+    "  const rooms = fsList('chat_rooms');",
+    "  const allRoomIds = ['all', ...rooms.map(r => r.name.split('/').pop())];",
+    "  const newMessages = [];",
+    "  allRoomIds.forEach(function(roomId) {",
+    "    const msgs = fsList('chat_' + roomId);",
+    "    msgs.forEach(function(m) {",
+    "      const createdAt = fVal(m.fields && m.fields.createdAt);",
+    "      const text = fVal(m.fields && m.fields.text);",
+    "      const sender = fVal(m.fields && m.fields.senderName);",
+    "      if (createdAt && createdAt > lastCheck && text) {",
+    "        const roomDoc = rooms.find(r => r.name.split('/').pop() === roomId);",
+    "        const roomName = roomId === 'all' ? '全体チャット' : (roomDoc && roomDoc.fields && roomDoc.fields.name ? fVal(roomDoc.fields.name) : roomId);",
+    "        const isStaff = roomName.indexOf('教員') !== -1 || roomName.indexOf('指導者') !== -1;",
+    "        newMessages.push({roomName:roomName, sender:sender, text:text, createdAt:createdAt, isStaff:isStaff});",
+    "      }",
+    "    });",
+    "  });",
+    "  if (newMessages.length === 0) {",
+    "    props.setProperty(lastCheckKey, new Date().toISOString());",
+    "    return;",
+    "  }",
+    "  const byRoom = {};",
+    "  newMessages.forEach(function(m) {",
+    "    if (!byRoom[m.roomName]) byRoom[m.roomName] = [];",
+    "    byRoom[m.roomName].push(m);",
+    "  });",
+    "  const allEmails = getAllEmails();",
+    "  const staffEmails = getStaffEmails();",
+    "  Object.keys(byRoom).forEach(function(roomName) {",
+    "    const msgs = byRoom[roomName];",
+    "    const isStaffRoom = msgs[0].isStaff;",
+    "    const targets = isStaffRoom ? staffEmails : allEmails;",
+    "    const subject = '[' + CLUB_NAME + '] ' + roomName;",
+    "    const body = msgs.map(function(m) { return m.sender + ': ' + m.text; }).join('\\n');",
+    "    targets.forEach(function(email) {",
+    "      try { GmailApp.sendEmail(email, subject, body); } catch(e) {}",
+    "    });",
+    "  });",
+    "  props.setProperty(lastCheckKey, new Date().toISOString());",
+    "}",
+    "",
+    "function checkDeadlines() {",
+    "  const props = PropertiesService.getScriptProperties();",
+    "  const now = new Date();",
+    "  const in3 = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);",
+    "  const items = fsList('items');",
+    "  const notifiedKey = 'DEADLINE_NOTIFIED';",
+    "  const notified = JSON.parse(props.getProperty(notifiedKey) || '{}');",
+    "  const targets = [];",
+    "  items.forEach(function(item) {",
+    "    const id = item.name.split('/').pop();",
+    "    const name = fVal(item.fields && item.fields.name);",
+    "    const deadline = fVal(item.fields && item.fields.deadline);",
+    "    if (!deadline || !name) return;",
+    "    const dl = new Date(deadline);",
+    "    if (dl < now || dl > in3) return;",
+    "    const dateKey = dl.toDateString();",
+    "    if (notified[id] === dateKey) return;",
+    "    targets.push({id:id, name:name, deadline:dl});",
+    "    notified[id] = dateKey;",
+    "  });",
+    "  if (targets.length === 0) return;",
+    "  const subject = '[' + CLUB_NAME + '] 配布物の締切が近づいています';",
+    "  const body = targets.map(function(t) { return '「' + t.name + '」締切：' + t.deadline.toLocaleString('ja-JP'); }).join('\\n');",
+    "  getAllEmails().forEach(function(email) {",
+    "    try { GmailApp.sendEmail(email, subject, body); } catch(e) {}",
+    "  });",
+    "  props.setProperty(notifiedKey, JSON.stringify(notified));",
+    "}",
+    "",
+    "function checkGreeting() {",
+    "  const data = fsGet('notifications/greeting');",
+    "  if (!data) return;",
+    "  const notified = data.fields && data.fields.notified && data.fields.notified.booleanValue;",
+    "  const text = fVal(data.fields && data.fields.text);",
+    "  if (notified || !text) return;",
+    "  const subject = '[' + CLUB_NAME + '] お知らせ';",
+    "  getAllEmails().forEach(function(email) {",
+    "    try { GmailApp.sendEmail(email, subject, text); } catch(e) {}",
+    "  });",
+    "  fPatch('notifications/greeting', {text:{stringValue:text}, notified:{booleanValue:true}, updatedAt:{timestampValue:new Date().toISOString()}});",
+    "}",
+    "",
+    "function checkVenueAnnouncements() {",
+    "  const url = 'https://firestore.googleapis.com/v1/projects/' + FIREBASE_PROJECT_ID + '/databases/(default)/documents/notifications?key=' + FIREBASE_API_KEY;",
+    "  const res = UrlFetchApp.fetch(url, {muteHttpExceptions:true});",
+    "  if (res.getResponseCode() !== 200) return;",
+    "  const data = JSON.parse(res.getContentText());",
+    "  if (!data.documents) return;",
+    "  data.documents.forEach(function(doc) {",
+    "    const id = doc.name.split('/').pop();",
+    "    if (id.indexOf('venue_') !== 0) return;",
+    "    const notified = doc.fields && doc.fields.notified && doc.fields.notified.booleanValue;",
+    "    const text = fVal(doc.fields && doc.fields.text);",
+    "    if (notified || !text) return;",
+    "    const subject = '[' + CLUB_NAME + '] 会場のお知らせ';",
+    "    getAllEmails().forEach(function(email) {",
+    "      try { GmailApp.sendEmail(email, subject, text); } catch(e) {}",
+    "    });",
+    "    fPatch('notifications/' + id, {text:{stringValue:text}, notified:{booleanValue:true}, updatedAt:{timestampValue:new Date().toISOString()}});",
+    "  });",
+    "}",
+  ];
+  return lines.join("\n");
 }
 
 // ─── Boot ───────────────────────────────────────────────────────────────────────
