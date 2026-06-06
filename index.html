@@ -672,6 +672,8 @@ function renderTItems(root){
       div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
         btn({className:"btn btn-g",onClick:()=>openResponseCsvImport(rebuild)},["📂 回答CSVインポート"]),
         btn({className:"btn btn-g",style:{background:"rgba(232,69,69,.12)",color:"#ff6b6b",border:"1px solid rgba(232,69,69,.3)"},onClick:()=>openOrderPdfModal()},["🖨️ 発注リスト出力"]),
+        btn({className:"btn btn-g",style:{background:"rgba(46,204,113,.12)",color:"var(--green)",border:"1px solid rgba(46,204,113,.3)"},onClick:()=>openReceiptModal()},["🧾 領収書作成"]),
+        btn({className:"btn btn-g",style:{background:"rgba(46,204,113,.12)",color:"var(--green)",border:"1px solid rgba(46,204,113,.3)"},onClick:()=>openReceiptModal()},["🧾 領収書作成"]),
         btn({className:"btn btn-p",onClick:()=>openItemModal(null,rebuild)},["＋ 新規追加"]),
       ]),
     ]),
@@ -1054,6 +1056,204 @@ function openResponseCsvImport(onSave){
     ]),
   );
   const ov=overlay(box,()=>ov.remove());
+}
+
+// ── 領収書作成 ────────────────────────────────────────────────────────────────
+function openReceiptModal(){
+  if(!S.items.length){ alert("配布物がありません"); return; }
+
+  let selItemId=S.items[0].id;
+  let issuerName="", issuerTitle="顧問", issuerOrg=S.cfg.clubName||"清教学園バドミントン部";
+  let stampImg=null;
+  let pricingMode="flat";
+  let flatPrice="";
+  let sizePrices={};
+  let selGrades=new Set([...new Set(S.students.map(s=>s.grade))]);
+  let receiptTitle="";
+
+  const box=div({className:"mb",style:{maxWidth:"600px"}});
+  const errEl=div({className:"hidden"});
+  const previewArea=div({});
+  const stampFileI=inp({type:"file",accept:"image/*",style:{display:"none"}});
+  const priceArea=div({});
+
+  const buildPriceArea=()=>{
+    priceArea.innerHTML="";
+    const item=S.items.find(i=>i.id===selItemId);
+    if(pricingMode==="flat"){
+      const fi=inp({className:"inp",type:"number",placeholder:"例：5000",value:flatPrice});
+      fi.addEventListener("input",e=>flatPrice=e.target.value);
+      priceArea.append(ff("金額（円）*",fi));
+    } else {
+      if(!item) return;
+      priceArea.append(div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"8px"}},["サイズごとに金額を設定してください"]));
+      item.sizes.forEach(sz=>{
+        const si=inp({className:"inp",type:"number",placeholder:"例：5000",value:sizePrices[sz]||""});
+        si.addEventListener("input",e=>{ sizePrices[sz]=e.target.value; });
+        priceArea.append(ff(`${sz} の金額（円）`,si));
+      });
+    }
+  };
+
+  const buildPreview=()=>{
+    const item=S.items.find(i=>i.id===selItemId);
+    if(!item){ previewArea.innerHTML=""; return; }
+    const answered=S.students.filter(s=>{
+      const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+      const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+      return g&&gd&&selGrades.has(s.grade)&&getResp(item.id,s.id);
+    });
+    previewArea.innerHTML="";
+    previewArea.append(div({style:{padding:"10px 14px",background:"rgba(46,204,113,.07)",borderRadius:"8px",border:"1px solid rgba(46,204,113,.2)",fontSize:"13px"}},[
+      `✓ 対象：${answered.length}名（${[...selGrades].sort().join("・")}年 / 回答済みのみ）`,
+    ]));
+  };
+
+  // 学年ボタン
+  const availGrades=[...new Set(S.students.map(s=>s.grade))].sort();
+  const gradeRow=div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}});
+  availGrades.forEach(g=>{
+    const b=btn({className:`sc ${selGrades.has(g)?"on":""}`,onClick:()=>{
+      if(selGrades.has(g)) selGrades.delete(g); else selGrades.add(g);
+      b.classList.toggle("on",selGrades.has(g)); buildPreview();
+    }},[`${g}年`]);
+    gradeRow.append(b);
+  });
+  gradeRow.append(btn({className:"btn btn-g sm",onClick:()=>{
+    availGrades.forEach(g=>selGrades.add(g));
+    gradeRow.querySelectorAll(".sc").forEach(b=>b.classList.add("on")); buildPreview();
+  }},["全学年"]));
+
+  // 配布物選択
+  const itemSel=sel({className:"inp"},[...S.items.map(i=>opt(i.id,i.name,i.id===selItemId))]);
+  itemSel.addEventListener("change",e=>{ selItemId=e.target.value; sizePrices={}; buildPriceArea(); buildPreview(); });
+
+  // 発行者
+  const issuerNameI=inp({className:"inp",placeholder:"米井 智裕",value:issuerName}); issuerNameI.addEventListener("input",e=>issuerName=e.target.value);
+  const issuerTitleI=inp({className:"inp",placeholder:"顧問",value:issuerTitle}); issuerTitleI.addEventListener("input",e=>issuerTitle=e.target.value);
+  const issuerOrgI=inp({className:"inp",value:issuerOrg}); issuerOrgI.addEventListener("input",e=>issuerOrg=e.target.value);
+  const receiptTitleI=inp({className:"inp",placeholder:"例：ユニフォーム代",value:receiptTitle}); receiptTitleI.addEventListener("input",e=>receiptTitle=e.target.value);
+
+  // 印鑑
+  const stampPrev=div({style:{width:"60px",height:"60px",borderRadius:"50%",border:"2px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:"22px",overflow:"hidden",flexShrink:0}},["🔴"]);
+  stampPrev.addEventListener("click",()=>stampFileI.click());
+  stampFileI.addEventListener("change",e=>{
+    const f=e.target.files[0]; if(!f) return;
+    compressImage(f,img=>{ stampImg=img; stampPrev.innerHTML=""; stampPrev.append(el("img",{src:img,style:{width:"100%",height:"100%",objectFit:"cover"}})); });
+  });
+
+  // 金額モード
+  const modeBtns={};
+  const modeRow=div({style:{display:"flex",gap:"8px"}});
+  [["flat","全員同一金額"],["bySize","サイズ別金額"]].forEach(([v,l])=>{
+    const b=btn({className:`sc ${pricingMode===v?"on":""}`,style:{flex:1,justifyContent:"center"},onClick:()=>{
+      pricingMode=v; Object.keys(modeBtns).forEach(k=>modeBtns[k].classList.toggle("on",k===v)); buildPriceArea();
+    }},[l]);
+    modeBtns[v]=b; modeRow.append(b);
+  });
+
+  buildPriceArea(); buildPreview();
+
+  box.append(
+    mhdr("🧾 領収書作成",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+      ff("配布物（品目）",itemSel),
+      ff("領収書タイトル（任意）",receiptTitleI),
+      div({style:{height:"1px",background:"var(--border)"}}),
+      div({style:{fontWeight:700,fontSize:"13px"}},["💰 金額設定"]),
+      ff("金額モード",modeRow), priceArea,
+      div({style:{height:"1px",background:"var(--border)"}}),
+      div({style:{fontWeight:700,fontSize:"13px"}},["👤 発行者情報"]),
+      div({className:"grid2"},[ff("発行者名",issuerNameI),ff("役職",issuerTitleI)]),
+      ff("発行元（組織名）",issuerOrgI),
+      ff("印鑑画像（任意）",div({style:{display:"flex",alignItems:"center",gap:"12px"}},[
+        stampPrev,
+        div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.7}},[
+          "クリックして印鑑画像をアップロード",el("br"),"丸い画像を使うと綺麗です",
+        ]),
+        stampFileI,
+      ])),
+      div({style:{height:"1px",background:"var(--border)"}}),
+      div({style:{fontWeight:700,fontSize:"13px"}},["📋 対象学年"]),
+      gradeRow, previewArea, errEl,
+    ]),
+    div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px",justifyContent:"flex-end"}},[
+      btn({className:"btn btn-g",onClick:()=>ov.remove()},["キャンセル"]),
+      btn({className:"btn btn-p",onClick:()=>{
+        const item=S.items.find(i=>i.id===selItemId);
+        if(!item) return showErr(errEl,"配布物を選択してください");
+        if(pricingMode==="flat"&&!flatPrice) return showErr(errEl,"金額を入力してください");
+        if(pricingMode==="bySize"&&item.sizes.some(sz=>!sizePrices[sz])) return showErr(errEl,"全サイズの金額を入力してください");
+        if(!selGrades.size) return showErr(errEl,"対象学年を選択してください");
+        ov.remove();
+        generateReceiptPdf({item,issuerName,issuerTitle,issuerOrg,stampImg,pricingMode,flatPrice,sizePrices,selGrades:new Set(selGrades),receiptTitle});
+      }},["PDF を生成・印刷"]),
+    ]),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+function generateReceiptPdf({item,issuerName,issuerTitle,issuerOrg,stampImg,pricingMode,flatPrice,sizePrices,selGrades,receiptTitle}){
+  const clubName=S.cfg.clubName||"清教学園バドミントン部";
+  const today=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
+
+  const answered=S.students.filter(s=>{
+    const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+    const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+    return g&&gd&&selGrades.has(s.grade)&&getResp(item.id,s.id);
+  }).sort((a,b)=>a.grade.localeCompare(b.grade)||a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number));
+
+  if(!answered.length){ alert("対象の回答済み選手がいません"); return; }
+
+  const win=window.open("","_blank");
+  if(!win){ alert("ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"); return; }
+
+  const stampHtml=stampImg
+    ?`<img src="${stampImg}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;position:absolute;right:28px;bottom:20px;opacity:0.88">`
+    :`<div style="width:64px;height:64px;border-radius:50%;border:3px solid #c00;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#c00;position:absolute;right:28px;bottom:20px;transform:rotate(-15deg);font-family:serif;text-align:center;line-height:1.3">${issuerOrg.slice(0,4)}</div>`;
+
+  const makeReceipt=(student)=>{
+    const resp=getResp(item.id,student.id);
+    const size=resp?resp.size:"";
+    const price=pricingMode==="flat"?Number(flatPrice):(size&&sizePrices[size]?Number(sizePrices[size]):0);
+    const priceStr=price.toLocaleString("ja-JP");
+    const itemLabel=receiptTitle||item.name;
+    const sizeStr=size?`（${size}）`:"";
+    return `
+    <div style="width:168mm;border:2px solid #1a1a2e;border-radius:6px;padding:18px 24px 16px 24px;position:relative;box-sizing:border-box;background:#fff">
+      <div style="font-size:20px;font-weight:900;text-align:center;letter-spacing:8px;margin-bottom:14px;color:#1a1a2e">領 収 書</div>
+      <div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:12px;border-bottom:2px solid #1a1a2e;padding-bottom:6px">
+        <span style="font-size:20px;font-weight:900">${student.name}</span>
+        <span style="font-size:15px;font-weight:700">様</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <span style="font-size:14px;font-weight:700;white-space:nowrap">金　額</span>
+        <span style="font-size:24px;font-weight:900;color:#1a1a2e;border-bottom:2px solid #1a1a2e;padding:0 14px;letter-spacing:2px">¥ ${priceStr} -</span>
+      </div>
+      <div style="margin-bottom:10px;padding:7px 12px;background:#f8f9fa;border-radius:4px;font-size:12px">
+        <span style="color:#666;margin-right:8px">品目：</span><span style="font-weight:700">${itemLabel}${sizeStr}</span>
+      </div>
+      <div style="font-size:11px;color:#666;margin-bottom:14px">但し、上記正に領収いたしました。</div>
+      <div style="font-size:11px;color:#444">発行日：${today}</div>
+      <div style="font-size:12px;font-weight:700;color:#1a1a2e;margin-top:2px">${issuerOrg}</div>
+      <div style="font-size:11px;color:#444">${issuerTitle}　${issuerName}</div>
+      ${stampHtml}
+    </div>`;
+  };
+
+  const pages=[];
+  for(let i=0;i<answered.length;i+=2){
+    const a=makeReceipt(answered[i]);
+    const b=answered[i+1]?makeReceipt(answered[i+1]):"";
+    pages.push(`<div style="display:flex;flex-direction:column;gap:10mm;padding:12mm 15mm;box-sizing:border-box;page-break-after:always">${a}${b}</div>`);
+  }
+
+  win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${clubName} 領収書</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Hiragino Sans','Noto Sans JP',sans-serif;background:#fff}
+@page{size:A4;margin:0}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>
+</head><body>${pages.join("")}</body></html>`);
+  win.document.close();
+  setTimeout(()=>win.print(),800);
 }
 
 function makeItemCard(item,onUpdate){
