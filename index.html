@@ -640,16 +640,41 @@ function renderTeacher(){
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
   const tabContent=div({});
-  const switchTab=k=>{
+  const switchTab=async k=>{
     curTab=k; TABS.forEach(([tk])=>tabBtns[tk].className=`tab ${tk===k?"on":""}`);
     clearAllCountdowns(); tabContent.innerHTML="";
-    if(k==="items")     renderTItems(tabContent);
-    if(k==="students")  renderTStudents(tabContent);
-    if(k==="overview")  renderTOverview(tabContent);
-    if(k==="matches")   renderTMatches(tabContent);
-    if(k==="chat")      renderChat(tabContent,"__teacher__","教員",true);
-    if(k==="attribute") renderTAttribute(tabContent);
-    if(k==="settings")  renderTSettings(tabContent);
+    tabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"32px 0",textAlign:"center"}},[" 読み込み中..."]));
+    // タブごとに必要なデータを再取得
+    try{
+      if(k==="items"){
+        S.items=await DB.getItems(); S.resp=await DB.getResps();
+        tabContent.innerHTML=""; renderTItems(tabContent);
+      } else if(k==="students"){
+        S.students=await DB.getStudents();
+        tabContent.innerHTML=""; renderTStudents(tabContent);
+      } else if(k==="overview"){
+        S.items=await DB.getItems(); S.resp=await DB.getResps(); S.students=await DB.getStudents();
+        tabContent.innerHTML=""; renderTOverview(tabContent);
+      } else if(k==="matches"){
+        S.matches=await DB.getMatches(); S.tournaments=await DB.getTournaments(); S.students=await DB.getStudents();
+        tabContent.innerHTML=""; renderTMatches(tabContent);
+      } else if(k==="chat"){
+        S.chatRooms=await DB.getChatRooms();
+        tabContent.innerHTML=""; renderChat(tabContent,"__teacher__","教員",true);
+      } else if(k==="attribute"){
+        S.students=await DB.getStudents();
+        tabContent.innerHTML=""; renderTAttribute(tabContent);
+      } else if(k==="settings"){
+        S.cfg=await DB.getCfg(); S.students=await DB.getStudents();
+        tabContent.innerHTML=""; renderTSettings(tabContent);
+      }
+    }catch(e){
+      tabContent.innerHTML="";
+      tabContent.append(div({style:{color:"var(--red)",fontSize:"13px",padding:"32px",textAlign:"center"}},[
+        `⚠ 読み込みに失敗しました`,el("br"),
+        btn({className:"btn btn-g sm",style:{marginTop:"12px"},onClick:()=>switchTab(k)},["再読み込み"]),
+      ]));
+    }
   };
   TABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===curTab?"on":""}`,onClick:()=>switchTab(k)},[l]); tabBtns[k]=b; tabBar.append(b); });
   switchTab("items");
@@ -1062,16 +1087,16 @@ function openResponseCsvImport(onSave){
 function openReceiptModal(){
   if(!S.items.length){ alert("配布物がありません"); return; }
 
-  let selItemId=S.items[0].id;
+  let selItemIds=new Set([S.items[0].id]); // 複数選択
   let issuerName="", issuerTitle="顧問", issuerOrg=S.cfg.clubName||"清教学園バドミントン部";
   let stampImg=null;
   let pricingMode="flat";
-  let flatPrice="";
-  let sizePrices={};
+  let flatPrices={};   // itemId -> 金額
+  let sizePrices={};   // itemId -> {size -> 金額}
   let selGrades=new Set([...new Set(S.students.map(s=>s.grade))]);
   let receiptTitle="";
 
-  const box=div({className:"mb",style:{maxWidth:"600px"}});
+  const box=div({className:"mb",style:{maxWidth:"620px"}});
   const errEl=div({className:"hidden"});
   const previewArea=div({});
   const stampFileI=inp({type:"file",accept:"image/*",style:{display:"none"}});
@@ -1079,35 +1104,69 @@ function openReceiptModal(){
 
   const buildPriceArea=()=>{
     priceArea.innerHTML="";
-    const item=S.items.find(i=>i.id===selItemId);
+    const items=S.items.filter(i=>selItemIds.has(i.id));
+    if(!items.length) return;
     if(pricingMode==="flat"){
-      const fi=inp({className:"inp",type:"number",placeholder:"例：5000",value:flatPrice});
-      fi.addEventListener("input",e=>flatPrice=e.target.value);
-      priceArea.append(ff("金額（円）*",fi));
+      items.forEach(item=>{
+        if(!flatPrices[item.id]) flatPrices[item.id]="";
+        const fi=inp({className:"inp",type:"number",placeholder:"例：5000",value:flatPrices[item.id]});
+        fi.addEventListener("input",e=>flatPrices[item.id]=e.target.value);
+        priceArea.append(ff(`${item.name} の金額（円）*`,fi));
+      });
     } else {
-      if(!item) return;
-      priceArea.append(div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"8px"}},["サイズごとに金額を設定してください"]));
-      item.sizes.forEach(sz=>{
-        const si=inp({className:"inp",type:"number",placeholder:"例：5000",value:sizePrices[sz]||""});
-        si.addEventListener("input",e=>{ sizePrices[sz]=e.target.value; });
-        priceArea.append(ff(`${sz} の金額（円）`,si));
+      items.forEach(item=>{
+        if(!sizePrices[item.id]) sizePrices[item.id]={};
+        priceArea.append(div({style:{fontWeight:600,fontSize:"13px",color:"var(--accent)",marginBottom:"4px",marginTop:"6px"}},[item.name]));
+        item.sizes.forEach(sz=>{
+          const si=inp({className:"inp",type:"number",placeholder:"例：5000",value:sizePrices[item.id][sz]||""});
+          si.addEventListener("input",e=>{ sizePrices[item.id][sz]=e.target.value; });
+          priceArea.append(ff(`　${sz} の金額（円）`,si));
+        });
       });
     }
   };
 
   const buildPreview=()=>{
-    const item=S.items.find(i=>i.id===selItemId);
-    if(!item){ previewArea.innerHTML=""; return; }
-    const answered=S.students.filter(s=>{
-      const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
-      const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
-      return g&&gd&&selGrades.has(s.grade)&&getResp(item.id,s.id);
+    const items=S.items.filter(i=>selItemIds.has(i.id));
+    if(!items.length){ previewArea.innerHTML=""; return; }
+    // 対象：選択した全品目のいずれかに回答済みの選手
+    const answeredSet=new Set();
+    items.forEach(item=>{
+      S.students.filter(s=>{
+        const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+        const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+        return g&&gd&&selGrades.has(s.grade)&&getResp(item.id,s.id);
+      }).forEach(s=>answeredSet.add(s.id));
     });
     previewArea.innerHTML="";
     previewArea.append(div({style:{padding:"10px 14px",background:"rgba(46,204,113,.07)",borderRadius:"8px",border:"1px solid rgba(46,204,113,.2)",fontSize:"13px"}},[
-      `✓ 対象：${answered.length}名（${[...selGrades].sort().join("・")}年 / 回答済みのみ）`,
+      `✓ 対象：${answeredSet.size}名（${[...selGrades].sort().join("・")}年 / 選択品目に1つ以上回答済み）`,
     ]));
   };
+
+  // 品目チェックボックス
+  const itemCheckArea=div({style:{display:"flex",flexDirection:"column",gap:"8px"}});
+  S.items.forEach(item=>{
+    const isOn=selItemIds.has(item.id);
+    const row=div({style:{
+      display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",
+      borderRadius:"8px",border:`1.5px solid ${isOn?"var(--accent)":"var(--border)"}`,
+      background:isOn?"rgba(244,162,40,.08)":"var(--card)",cursor:"pointer",transition:"all .15s",
+    }});
+    const chk=div({style:{width:"16px",height:"16px",borderRadius:"3px",border:`2px solid var(--accent)`,background:isOn?"var(--accent)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"10px",color:"#000",fontWeight:700,flexShrink:0}},[isOn?"✓":""]);
+    row.append(chk, item.imageUrl?el("img",{src:item.imageUrl,style:{width:"30px",height:"30px",borderRadius:"4px",objectFit:"cover",flexShrink:0}}):span({style:{fontSize:"18px"}},["👕"]), div({style:{flex:1}},[div({style:{fontWeight:600,fontSize:"13px"}},[item.name])]));
+    row.addEventListener("click",()=>{
+      if(selItemIds.has(item.id)) selItemIds.delete(item.id);
+      else selItemIds.add(item.id);
+      const on=selItemIds.has(item.id);
+      row.style.borderColor=on?"var(--accent)":"var(--border)";
+      row.style.background=on?"rgba(244,162,40,.08)":"var(--card)";
+      chk.style.background=on?"var(--accent)":"transparent";
+      chk.textContent=on?"✓":"";
+      buildPriceArea(); buildPreview();
+    });
+    itemCheckArea.append(row);
+  });
 
   // 学年ボタン
   const availGrades=[...new Set(S.students.map(s=>s.grade))].sort();
@@ -1123,10 +1182,6 @@ function openReceiptModal(){
     availGrades.forEach(g=>selGrades.add(g));
     gradeRow.querySelectorAll(".sc").forEach(b=>b.classList.add("on")); buildPreview();
   }},["全学年"]));
-
-  // 配布物選択
-  const itemSel=sel({className:"inp"},[...S.items.map(i=>opt(i.id,i.name,i.id===selItemId))]);
-  itemSel.addEventListener("change",e=>{ selItemId=e.target.value; sizePrices={}; buildPriceArea(); buildPreview(); });
 
   // 発行者
   const issuerNameI=inp({className:"inp",placeholder:"米井 智裕",value:issuerName}); issuerNameI.addEventListener("input",e=>issuerName=e.target.value);
@@ -1157,8 +1212,9 @@ function openReceiptModal(){
   box.append(
     mhdr("🧾 領収書作成",()=>ov.remove()),
     div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
-      ff("配布物（品目）",itemSel),
-      ff("領収書タイトル（任意）",receiptTitleI),
+      div({style:{fontWeight:700,fontSize:"13px"}},["📋 品目を選択（複数選択可）"]),
+      itemCheckArea,
+      ff("領収書タイトル（任意・全品目共通）",receiptTitleI),
       div({style:{height:"1px",background:"var(--border)"}}),
       div({style:{fontWeight:700,fontSize:"13px"}},["💰 金額設定"]),
       ff("金額モード",modeRow), priceArea,
@@ -1168,84 +1224,98 @@ function openReceiptModal(){
       ff("発行元（組織名）",issuerOrgI),
       ff("印鑑画像（任意）",div({style:{display:"flex",alignItems:"center",gap:"12px"}},[
         stampPrev,
-        div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.7}},[
-          "クリックして印鑑画像をアップロード",el("br"),"丸い画像を使うと綺麗です",
-        ]),
+        div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.7}},["クリックして印鑑画像をアップロード",el("br"),"丸い画像を使うと綺麗です"]),
         stampFileI,
       ])),
       div({style:{height:"1px",background:"var(--border)"}}),
-      div({style:{fontWeight:700,fontSize:"13px"}},["📋 対象学年"]),
+      div({style:{fontWeight:700,fontSize:"13px"}},["👥 対象学年"]),
       gradeRow, previewArea, errEl,
     ]),
     div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px",justifyContent:"flex-end"}},[
       btn({className:"btn btn-g",onClick:()=>ov.remove()},["キャンセル"]),
       btn({className:"btn btn-p",onClick:()=>{
-        const item=S.items.find(i=>i.id===selItemId);
-        if(!item) return showErr(errEl,"配布物を選択してください");
-        if(pricingMode==="flat"&&!flatPrice) return showErr(errEl,"金額を入力してください");
-        if(pricingMode==="bySize"&&item.sizes.some(sz=>!sizePrices[sz])) return showErr(errEl,"全サイズの金額を入力してください");
+        const items=S.items.filter(i=>selItemIds.has(i.id));
+        if(!items.length) return showErr(errEl,"品目を1つ以上選択してください");
+        if(pricingMode==="flat"&&items.some(i=>!flatPrices[i.id])) return showErr(errEl,"全品目の金額を入力してください");
+        if(pricingMode==="bySize"&&items.some(i=>i.sizes.some(sz=>!sizePrices[i.id]?.[sz]))) return showErr(errEl,"全品目・全サイズの金額を入力してください");
         if(!selGrades.size) return showErr(errEl,"対象学年を選択してください");
         ov.remove();
-        generateReceiptPdf({item,issuerName,issuerTitle,issuerOrg,stampImg,pricingMode,flatPrice,sizePrices,selGrades:new Set(selGrades),receiptTitle});
+        generateReceiptPdf({items,issuerName,issuerTitle,issuerOrg,stampImg,pricingMode,flatPrices,sizePrices,selGrades:new Set(selGrades),receiptTitle});
       }},["PDF を生成・印刷"]),
     ]),
   );
   const ov=overlay(box,()=>ov.remove());
 }
 
-function generateReceiptPdf({item,issuerName,issuerTitle,issuerOrg,stampImg,pricingMode,flatPrice,sizePrices,selGrades,receiptTitle}){
+function generateReceiptPdf({items,issuerName,issuerTitle,issuerOrg,stampImg,pricingMode,flatPrices,sizePrices,selGrades,receiptTitle}){
   const clubName=S.cfg.clubName||"清教学園バドミントン部";
   const today=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
 
-  const answered=S.students.filter(s=>{
-    const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
-    const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
-    return g&&gd&&selGrades.has(s.grade)&&getResp(item.id,s.id);
-  }).sort((a,b)=>a.grade.localeCompare(b.grade)||a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number));
+  // 対象選手：選択品目のいずれかに回答済み（学年フィルター込み）
+  const answeredSet=new Set();
+  items.forEach(item=>{
+    S.students.filter(s=>{
+      const g=!item.targetGrades||item.targetGrades.length===0||item.targetGrades.includes(s.grade);
+      const gd=!item.targetGenders||item.targetGenders.length===0||item.targetGenders.includes(s.gender);
+      return g&&gd&&selGrades.has(s.grade)&&getResp(item.id,s.id);
+    }).forEach(s=>answeredSet.add(s.id));
+  });
+  const answered=[...answeredSet].map(id=>S.students.find(s=>s.id===id)).filter(Boolean)
+    .sort((a,b)=>a.grade.localeCompare(b.grade)||a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number));
 
   if(!answered.length){ alert("対象の回答済み選手がいません"); return; }
 
   const win=window.open("","_blank");
-  if(!win){ alert("ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"); return; }
+  if(!win){ alert("ポップアップがブロックされました"); return; }
 
   const stampHtml=stampImg
-    ?`<img src="${stampImg}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;position:absolute;right:28px;bottom:20px;opacity:0.88">`
-    :`<div style="width:64px;height:64px;border-radius:50%;border:3px solid #c00;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#c00;position:absolute;right:28px;bottom:20px;transform:rotate(-15deg);font-family:serif;text-align:center;line-height:1.3">${issuerOrg.slice(0,4)}</div>`;
+    ?`<img src="${stampImg}" style="width:68px;height:68px;object-fit:cover;border-radius:50%;position:absolute;right:26px;bottom:18px;opacity:0.88">`
+    :`<div style="width:62px;height:62px;border-radius:50%;border:3px solid #c00;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#c00;position:absolute;right:26px;bottom:18px;transform:rotate(-15deg);font-family:serif;text-align:center;line-height:1.3">${issuerOrg.slice(0,4)}</div>`;
 
   const makeReceipt=(student)=>{
-    const resp=getResp(item.id,student.id);
-    const size=resp?resp.size:"";
-    const price=pricingMode==="flat"?Number(flatPrice):(size&&sizePrices[size]?Number(sizePrices[size]):0);
-    const priceStr=price.toLocaleString("ja-JP");
-    const itemLabel=receiptTitle||item.name;
-    const sizeStr=size?`（${size}）`:"";
+    // 各品目の金額・サイズを集計
+    let totalPrice=0;
+    const itemLines=items.map(item=>{
+      const resp=getResp(item.id,student.id);
+      if(!resp) return null;
+      const size=resp.size;
+      const price=pricingMode==="flat"?Number(flatPrices[item.id]||0):(size&&sizePrices[item.id]?.[size]?Number(sizePrices[item.id][size]):0);
+      totalPrice+=price;
+      const sizeStr=size?`（${size}）`:"";
+      return `<tr><td style="padding:4px 8px;font-size:12px;border:1px solid #ddd">${item.name}${sizeStr}</td><td style="padding:4px 8px;font-size:12px;text-align:right;border:1px solid #ddd;white-space:nowrap">¥ ${price.toLocaleString("ja-JP")}</td></tr>`;
+    }).filter(Boolean);
+
+    const title=receiptTitle||(items.length===1?items[0].name:"各種代金");
+    const totalStr=totalPrice.toLocaleString("ja-JP");
+
     return `
-    <div style="width:168mm;border:2px solid #1a1a2e;border-radius:6px;padding:18px 24px 16px 24px;position:relative;box-sizing:border-box;background:#fff">
-      <div style="font-size:20px;font-weight:900;text-align:center;letter-spacing:8px;margin-bottom:14px;color:#1a1a2e">領 収 書</div>
-      <div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:12px;border-bottom:2px solid #1a1a2e;padding-bottom:6px">
-        <span style="font-size:20px;font-weight:900">${student.name}</span>
-        <span style="font-size:15px;font-weight:700">様</span>
+    <div style="width:168mm;border:2px solid #1a1a2e;border-radius:6px;padding:16px 22px 14px 22px;position:relative;box-sizing:border-box;background:#fff">
+      <div style="font-size:19px;font-weight:900;text-align:center;letter-spacing:8px;margin-bottom:12px;color:#1a1a2e">領 収 書</div>
+      <div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px;border-bottom:2px solid #1a1a2e;padding-bottom:5px">
+        <span style="font-size:19px;font-weight:900">${student.name}</span><span style="font-size:14px;font-weight:700">様</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-        <span style="font-size:14px;font-weight:700;white-space:nowrap">金　額</span>
-        <span style="font-size:24px;font-weight:900;color:#1a1a2e;border-bottom:2px solid #1a1a2e;padding:0 14px;letter-spacing:2px">¥ ${priceStr} -</span>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <span style="font-size:13px;font-weight:700;white-space:nowrap">合計金額</span>
+        <span style="font-size:22px;font-weight:900;color:#1a1a2e;border-bottom:2px solid #1a1a2e;padding:0 12px;letter-spacing:2px">¥ ${totalStr} -</span>
       </div>
-      <div style="margin-bottom:10px;padding:7px 12px;background:#f8f9fa;border-radius:4px;font-size:12px">
-        <span style="color:#666;margin-right:8px">品目：</span><span style="font-weight:700">${itemLabel}${sizeStr}</span>
-      </div>
-      <div style="font-size:11px;color:#666;margin-bottom:14px">但し、上記正に領収いたしました。</div>
-      <div style="font-size:11px;color:#444">発行日：${today}</div>
+      <table style="width:calc(100% - 80px);border-collapse:collapse;margin-bottom:8px">
+        <thead><tr style="background:#f0f0f0"><th style="padding:4px 8px;font-size:11px;text-align:left;border:1px solid #ddd">品目</th><th style="padding:4px 8px;font-size:11px;text-align:right;border:1px solid #ddd">金額</th></tr></thead>
+        <tbody>${itemLines.join("")}</tbody>
+      </table>
+      <div style="font-size:10px;color:#666;margin-bottom:10px">但し、上記正に領収いたしました。</div>
+      <div style="font-size:10px;color:#444">発行日：${today}</div>
       <div style="font-size:12px;font-weight:700;color:#1a1a2e;margin-top:2px">${issuerOrg}</div>
-      <div style="font-size:11px;color:#444">${issuerTitle}　${issuerName}</div>
+      <div style="font-size:10px;color:#444">${issuerTitle}　${issuerName}</div>
       ${stampHtml}
     </div>`;
   };
 
   const pages=[];
-  for(let i=0;i<answered.length;i+=2){
+  for(let i=0;i<answered.length;i+=3){
     const a=makeReceipt(answered[i]);
     const b=answered[i+1]?makeReceipt(answered[i+1]):"";
-    pages.push(`<div style="display:flex;flex-direction:column;gap:10mm;padding:12mm 15mm;box-sizing:border-box;page-break-after:always">${a}${b}</div>`);
+    const c=answered[i+2]?makeReceipt(answered[i+2]):"";
+    pages.push(`<div style="display:flex;flex-direction:column;gap:6mm;padding:8mm 15mm;box-sizing:border-box;page-break-after:always">${a}${b}${c}</div>`);
   }
 
   win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${clubName} 領収書</title>
@@ -1428,10 +1498,7 @@ function renderTStudents(root){
     S.students=await DB.getStudents();
     const regCount=S.students.filter(s=>s.registered).length;
 
-    // 学年ごとにグループ化
     const grades=[...new Set(S.students.map(s=>s.grade))].sort();
-    const byGrade={};
-    grades.forEach(g=>{ byGrade[g]=S.students.filter(s=>s.grade===g).sort((a,b)=>a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number)); });
 
     root.append(
       div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px",flexWrap:"wrap",gap:"10px"}},[
@@ -1440,23 +1507,26 @@ function renderTStudents(root){
           div({style:{color:"var(--muted)",fontSize:"13px"}},[`計${S.students.length}名（登録済:${regCount}名）`]),
         ]),
         div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
+          btn({className:"btn btn-g",onClick:()=>exportStudentsCsv()},["📥 一覧を出力"]),
           btn({className:"btn btn-g",onClick:()=>openCsvImport(rebuild)},["📂 CSVインポート"]),
           btn({className:"btn btn-p",onClick:()=>openStudentModal(rebuild)},["＋ 選手を追加"]),
         ]),
       ]),
     );
 
-    if(!S.students.length){
-      root.append(emptyState("👥","選手が登録されていません"));
-      return;
-    }
+    if(!S.students.length){ root.append(emptyState("👥","選手が登録されていません")); return; }
+
+    const GENDER_ORDER=["male","female","other"];
+    const GENDER_LABEL={male:"男子",female:"女子",other:"その他"};
+    const GENDER_COLOR={male:"rgba(74,158,255,.15)",female:"rgba(232,69,69,.1)",other:"rgba(255,255,255,.05)"};
+    const GENDER_BADGE={male:"b-b",female:"b-r",other:"b-0"};
 
     grades.forEach(g=>{
-      const students=byGrade[g];
-      const regC=students.filter(s=>s.registered).length;
-      let open=false; // デフォルト折り畳み
+      const gradeStudents=S.students.filter(s=>s.grade===g);
+      const regC=gradeStudents.filter(s=>s.registered).length;
+      let gradeOpen=false;
 
-      // ブロックヘッダー
+      // 学年ヘッダー
       const blockHdr=div({style:{
         display:"flex",alignItems:"center",gap:"12px",
         padding:"10px 16px",borderRadius:"10px 10px 0 0",
@@ -1466,66 +1536,139 @@ function renderTStudents(root){
       const arrow=span({style:{color:"var(--accent)",fontSize:"16px",transition:"transform .2s",transform:"rotate(-90deg)"}},["▼"]);
       blockHdr.append(
         div({style:{fontWeight:700,fontSize:"15px"}},[`${g}年生`]),
-        div({style:{fontSize:"12px",color:"var(--muted)"}},[`${students.length}名`]),
+        div({style:{fontSize:"12px",color:"var(--muted)"}},[`${gradeStudents.length}名`]),
         badge("b-g",`登録済 ${regC}名`),
-        badge("b-y",`未登録 ${students.length-regC}名`),
+        badge("b-y",`未登録 ${gradeStudents.length-regC}名`),
         div({style:{marginLeft:"auto"}},[arrow]),
       );
 
-      // テーブル
-      const rows=students.map(s=>{
-        const ans=S.items.filter(i=>getResp(i.id,s.id)).length;
-        const tr=el("tr");
-        tr.append(
-          el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[`${s.cls}組 ${s.number}番`]),
-          el("td",{},[
-            div({style:{fontWeight:600}},[s.name]),
-            div({style:{fontSize:"11px",color:"var(--muted)"}},[s.kana||""]),
-          ]),
-          el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[fmtDs(s.dob)]),
-          el("td",{},[s.registered?badge("b-g","✓ 済"):badge("b-y","未")]),
-          el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
-          el("td",{style:{display:"flex",gap:"5px",flexWrap:"wrap",padding:"8px 14px"}},[
-            s.registered
-              ? btn({className:"btn btn-b sm",onClick:()=>openPwModal(s,rebuild)},["🔑 PW"])
-              : span({style:{fontSize:"11px",color:"var(--muted)",lineHeight:"28px"}},["未登録"]),
-            btn({className:"btn btn-d sm",onClick:async()=>{
-              if(!confirm(`${s.name}を削除しますか？`))return;
-              await DB.deleteStudent(s.id);
-              S.students=S.students.filter(x=>x.id!==s.id);
-              rebuild();
-            }},["削除"]),
-          ]),
+      // 性別ごとのブロックをまとめるコンテナ
+      const genderContainer=div({style:{
+        border:"1px solid var(--border)",borderTop:"none",
+        borderRadius:"0 0 10px 10px",display:"none",overflow:"hidden",
+      }});
+
+      // 性別ごとのサブブロック
+      GENDER_ORDER.forEach(gender=>{
+        const gStudents=gradeStudents.filter(s=>s.gender===gender)
+          .sort((a,b)=>a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number));
+        if(!gStudents.length) return;
+
+        let gOpen=false;
+        const gHdr=div({style:{
+          display:"flex",alignItems:"center",gap:"10px",
+          padding:"8px 16px",background:GENDER_COLOR[gender],
+          cursor:"pointer",userSelect:"none",borderTop:"1px solid var(--border)",
+        }});
+        const gArrow=span({style:{color:"var(--muted)",fontSize:"13px",transition:"transform .2s",transform:"rotate(-90deg)"}},["▼"]);
+        gHdr.append(
+          badge(GENDER_BADGE[gender],GENDER_LABEL[gender]),
+          div({style:{fontSize:"12px",color:"var(--muted)"}},[`${gStudents.length}名`]),
+          div({style:{marginLeft:"auto"}},[gArrow]),
         );
-        return tr;
+
+        const rows=gStudents.map(s=>{
+          const ans=S.items.filter(i=>getResp(i.id,s.id)).length;
+          const tr=el("tr");
+          tr.append(
+            el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[`${s.cls}組 ${s.number}番`]),
+            el("td",{},[
+              div({style:{fontWeight:600}},[s.name]),
+              div({style:{fontSize:"11px",color:"var(--muted)"}},[s.kana||""]),
+            ]),
+            el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[fmtDs(s.dob)]),
+            el("td",{},[s.registered?badge("b-g","✓ 済"):badge("b-y","未")]),
+            el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
+            el("td",{style:{display:"flex",gap:"5px",flexWrap:"wrap",padding:"8px 14px"}},[
+              s.registered
+                ? btn({className:"btn btn-b sm",onClick:()=>openPwModal(s,rebuild)},["🔑 PW"])
+                : span({style:{fontSize:"11px",color:"var(--muted)",lineHeight:"28px"}},["未登録"]),
+              btn({className:"btn btn-d sm",onClick:async()=>{
+                if(!confirm(`${s.name}を削除しますか？`))return;
+                await DB.deleteStudent(s.id);
+                S.students=S.students.filter(x=>x.id!==s.id);
+                rebuild();
+              }},["削除"]),
+            ]),
+          );
+          return tr;
+        });
+
+        const gTable=div({style:{display:"none",overflowX:"auto"}});
+        gTable.append(el("table",{},[
+          el("thead",{},[el("tr",{},[
+            el("th",{},["組/番"]),el("th",{},["氏名/ふりがな"]),
+            el("th",{},["生年月日"]),el("th",{},["登録"]),el("th",{},["回答"]),el("th",{}),
+          ])]),
+          el("tbody",{},rows),
+        ]));
+
+        gHdr.addEventListener("click",()=>{
+          gOpen=!gOpen;
+          gTable.style.display=gOpen?"block":"none";
+          gArrow.style.transform=gOpen?"":"rotate(-90deg)";
+        });
+        genderContainer.append(gHdr,gTable);
       });
 
-      const tableWrap=div({style:{borderRadius:"0 0 10px 10px",border:"1px solid var(--border)",borderTop:"none",overflow:"hidden",display:"none"}});
-      tableWrap.append(el("table",{},[
-        el("thead",{},[el("tr",{},[
-          el("th",{},["組/番"]),
-          el("th",{},["氏名/ふりがな"]),
-          el("th",{},["生年月日"]),
-          el("th",{},["登録"]),
-          el("th",{},["回答"]),
-          el("th",{}),
-        ])]),
-        el("tbody",{},rows),
-      ]));
-
-      // 開閉トグル
       blockHdr.addEventListener("click",()=>{
-        open=!open;
-        tableWrap.style.display=open?"block":"none";
-        arrow.style.transform=open?"":"rotate(-90deg)";
+        gradeOpen=!gradeOpen;
+        genderContainer.style.display=gradeOpen?"block":"none";
+        arrow.style.transform=gradeOpen?"":"rotate(-90deg)";
       });
 
       const block=div({style:{marginBottom:"16px"}});
-      block.append(blockHdr, tableWrap);
+      block.append(blockHdr,genderContainer);
       root.append(block);
     });
   };
   rebuild();
+}
+
+// 選手一覧CSV出力
+function exportStudentsCsv(){
+  if(!S.students.length){ alert("選手が登録されていません"); return; }
+
+  const GENDER_LABEL={male:"男",female:"女",other:"その他"};
+  const sorted=[...S.students].sort((a,b)=>
+    a.grade.localeCompare(b.grade)||a.gender?.localeCompare(b.gender||"")||
+    a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number)
+  );
+
+  // ヘッダー行
+  const headers=["学年","クラス","出席番号","氏名","ふりがな","性別","生年月日","登録状態"];
+  // 配布物の回答も含める
+  const itemHeaders=S.items.map(i=>i.name);
+  const allHeaders=[...headers,...itemHeaders];
+
+  const rows=sorted.map(s=>{
+    const base=[
+      `${s.grade}年`,s.cls,s.number,s.name,s.kana||"",
+      GENDER_LABEL[s.gender]||s.gender||"",
+      s.dob||"",
+      s.registered?"登録済":"未登録",
+    ];
+    const itemCols=S.items.map(i=>{
+      const r=getResp(i.id,s.id);
+      return r?r.size:"";
+    });
+    return [...base,...itemCols];
+  });
+
+  // BOM付きUTF-8でCSV生成（Excelで文字化けしないように）
+  const csvLines=[allHeaders,...rows].map(row=>
+    row.map(v=>String(v).includes(",")||String(v).includes('"')?`"${String(v).replace(/"/g,'""')}"`:String(v)).join(",")
+  );
+  const bom="\uFEFF";
+  const csvContent=bom+csvLines.join("\n");
+
+  // ダウンロード
+  const blob=new Blob([csvContent],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const today=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"");
+  a.href=url; a.download=`選手一覧_${S.cfg.clubName||"部活"}_${today}.csv`;
+  a.click(); URL.revokeObjectURL(url);
 }
 
 // ── CSVインポート ────────────────────────────────────────────────────────────────
@@ -2409,19 +2552,25 @@ async function renderStudent(){
   const switchSTab=async k=>{
     sCurTab=k; STABS.forEach(([tk])=>sTabBtns[tk].className=`tab ${tk===k?"on":""}`);
     sTabContent.innerHTML="";
-    if(k==="uniform") renderSUniform(sTabContent,student);
-    if(k==="matches"){
-      sTabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},[" 読み込み中..."]));
-      S.matches=await DB.getMatches();
-      S.tournaments=await DB.getTournaments();
+    sTabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},[" 読み込み中..."]));
+    try{
+      if(k==="uniform"){
+        S.items=await DB.getItems(); S.resp=await DB.getResps();
+        sTabContent.innerHTML=""; renderSUniform(sTabContent,student);
+      } else if(k==="matches"){
+        S.matches=await DB.getMatches(); S.tournaments=await DB.getTournaments();
+        sTabContent.innerHTML=""; renderSMatches(sTabContent,student);
+      } else if(k==="chat"){
+        S.chatRooms=await DB.getChatRooms();
+        sTabContent.innerHTML=""; renderChat(sTabContent,student.id,student.name);
+        updateChatBadge(sTabBtns["chat"],student.id);
+      }
+    }catch(e){
       sTabContent.innerHTML="";
-      renderSMatches(sTabContent,student);
-    }
-    if(k==="chat"){
-      S.readMarks=await DB.getReadMarks(student.id);
-      renderChat(sTabContent,student.id,student.name);
-      // バッジ更新
-      updateChatBadge(sTabBtns["chat"],student.id);
+      sTabContent.append(div({style:{color:"var(--red)",fontSize:"13px",padding:"32px",textAlign:"center"}},[
+        `⚠ 読み込みに失敗しました`,el("br"),
+        btn({className:"btn btn-g sm",style:{marginTop:"12px"},onClick:()=>switchSTab(k)},["再読み込み"]),
+      ]));
     }
   };
 
