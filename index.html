@@ -118,8 +118,11 @@ const doc        = (database, col, id) => database.collection(col).doc(id);
 const collection = (database, col)     => database.collection(col);
 const getDoc     = async ref           => { const s=await ref.get(); return { exists:()=>!!s.exists, data:()=>s.data()||{}, id:s.id }; };
 const getDocs    = async ref           => { const s=await ref.get(); return { docs: (s.docs||[]).map(d=>({ id:d.id, data:()=>d.data()||{} })) }; };
-const setDoc     = (ref, data)         => ref.set(data);
+const setDoc     = (ref, data)         => ref.set(data,{merge:false});
 const deleteDoc  = ref                 => ref.delete();
+
+// タイムアウト付きPromise（8秒でリジェクト）
+const withTimeout = (p, ms=8000) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error("タイムアウト")),ms))]);
 
 // ─── DB helpers ────────────────────────────────────────────────────────────────
 const DEF_CFG = { clubName:"清教学園バドミントン部", teacherPw:"teacher123", greeting:"", coaches:[] };
@@ -127,57 +130,54 @@ const DEF_CFG = { clubName:"清教学園バドミントン部", teacherPw:"teach
 
 const DB = {
   async getCfg(){
-    try{ const d=await getDoc(doc(db,"app","cfg")); return d.exists()?d.data():DEF_CFG; }catch{ return DEF_CFG; }
+    try{ const d=await withTimeout(getDoc(doc(db,"app","cfg"))); return d.exists()?d.data():DEF_CFG; }catch{ return DEF_CFG; }
   },
   async saveCfg(cfg){ await setDoc(doc(db,"app","cfg"),cfg); },
   async getStudents(){
-    try{ const s=await getDocs(collection(db,"students")); return s.docs.map(d=>({id:d.id,...d.data()})); }catch{ return []; }
+    try{ const s=await withTimeout(getDocs(collection(db,"students"))); return s.docs.map(d=>({id:d.id,...d.data()})); }catch(e){ console.warn("getStudents",e); return []; }
   },
   async saveStudent(s){ await setDoc(doc(db,"students",s.id),s); },
   async deleteStudent(id){ await deleteDoc(doc(db,"students",id)); },
   async getItems(){
-    try{ const s=await getDocs(collection(db,"items")); return s.docs.map(d=>({id:d.id,...d.data()})); }catch{ return []; }
+    try{ const s=await withTimeout(getDocs(collection(db,"items"))); return s.docs.map(d=>({id:d.id,...d.data()})); }catch(e){ console.warn("getItems",e); return []; }
   },
   async saveItem(item){ await setDoc(doc(db,"items",item.id),item); },
   async deleteItem(id){ await deleteDoc(doc(db,"items",id)); },
   async getResps(){
-    try{ const s=await getDocs(collection(db,"responses")); const r={}; s.docs.forEach(d=>r[d.id]=d.data()); return r; }catch{ return {}; }
+    try{ const s=await withTimeout(getDocs(collection(db,"responses"))); const r={}; s.docs.forEach(d=>r[d.id]=d.data()); return r; }catch(e){ console.warn("getResps",e); return {}; }
   },
   async saveResp(key,data){ await setDoc(doc(db,"responses",key),data); },
   async getMatches(){
-    try{ const s=await getDocs(collection(db,"matches")); return s.docs.map(d=>({id:d.id,...d.data()})); }catch{ return []; }
+    try{ const s=await withTimeout(getDocs(collection(db,"matches"))); return s.docs.map(d=>({id:d.id,...d.data()})); }catch(e){ console.warn("getMatches",e); return []; }
   },
   async saveMatch(m){ await setDoc(doc(db,"matches",m.id),m); },
   async deleteMatch(id){ await deleteDoc(doc(db,"matches",id)); },
   async getTournaments(){
-    try{ const s=await getDocs(collection(db,"tournaments")); return s.docs.map(d=>({id:d.id,...d.data()})); }catch{ return []; }
+    try{ const s=await withTimeout(getDocs(collection(db,"tournaments"))); return s.docs.map(d=>({id:d.id,...d.data()})); }catch(e){ console.warn("getTournaments",e); return []; }
   },
   async saveTournament(t){ await setDoc(doc(db,"tournaments",t.id),t); },
   async deleteTournament(id){ await deleteDoc(doc(db,"tournaments",id)); },
-  // チャットルーム管理
   async getChatRooms(){
-    try{ const s=await getDocs(collection(db,"chat_rooms")); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)); }catch{ return []; }
+    try{ const s=await withTimeout(getDocs(collection(db,"chat_rooms"))); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||"")); }catch(e){ console.warn("getChatRooms",e); return []; }
   },
   async saveChatRoom(r){ await setDoc(doc(db,"chat_rooms",r.id),r); },
   async deleteChatRoom(id){ await deleteDoc(doc(db,"chat_rooms",id)); },
-  // チャット
   async getChatMessages(roomId){
     try{
-      const s=await getDocs(collection(db,`chat_${roomId}`));
-      return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
-    }catch{ return []; }
+      const s=await withTimeout(getDocs(collection(db,`chat_${roomId}`)));
+      return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+    }catch(e){ console.warn("getChatMessages",e); return []; }
   },
   async sendChatMessage(roomId,msg){ await setDoc(doc(db,`chat_${roomId}`,msg.id),msg); },
   async deleteChatMessage(roomId,msgId){ await deleteDoc(doc(db,`chat_${roomId}`,msgId)); },
-  // 既読管理
-  async markRead(userId,roomId){ await setDoc(doc(db,"chat_read",`${userId}_${roomId}`),{lastRead:new Date().toISOString()}); },
+  async markRead(userId,roomId){ try{ await setDoc(doc(db,"chat_read",`${userId}_${roomId}`),{lastRead:new Date().toISOString()}); }catch{} },
   async getReadMarks(userId){
     try{
-      const s=await getDocs(collection(db,"chat_read"));
+      const s=await withTimeout(getDocs(collection(db,"chat_read")));
       const r={};
       s.docs.filter(d=>d.id.startsWith(userId+"_")).forEach(d=>{ r[d.id.slice(userId.length+1)]=d.data().lastRead; });
       return r;
-    }catch{ return {}; }
+    }catch(e){ console.warn("getReadMarks",e); return {}; }
   },
 };
 
@@ -644,19 +644,18 @@ function renderTeacher(){
     curTab=k; TABS.forEach(([tk])=>tabBtns[tk].className=`tab ${tk===k?"on":""}`);
     clearAllCountdowns(); tabContent.innerHTML="";
     tabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"32px 0",textAlign:"center"}},[" 読み込み中..."]));
-    // タブごとに必要なデータを再取得
     try{
       if(k==="items"){
-        S.items=await DB.getItems(); S.resp=await DB.getResps();
+        [S.items,S.resp,S.students]=await Promise.all([DB.getItems(),DB.getResps(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTItems(tabContent);
       } else if(k==="students"){
-        S.students=await DB.getStudents();
+        [S.students,S.items,S.resp]=await Promise.all([DB.getStudents(),DB.getItems(),DB.getResps()]);
         tabContent.innerHTML=""; renderTStudents(tabContent);
       } else if(k==="overview"){
-        S.items=await DB.getItems(); S.resp=await DB.getResps(); S.students=await DB.getStudents();
+        [S.items,S.resp,S.students]=await Promise.all([DB.getItems(),DB.getResps(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTOverview(tabContent);
       } else if(k==="matches"){
-        S.matches=await DB.getMatches(); S.tournaments=await DB.getTournaments(); S.students=await DB.getStudents();
+        [S.matches,S.tournaments,S.students]=await Promise.all([DB.getMatches(),DB.getTournaments(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTMatches(tabContent);
       } else if(k==="chat"){
         S.chatRooms=await DB.getChatRooms();
@@ -665,13 +664,14 @@ function renderTeacher(){
         S.students=await DB.getStudents();
         tabContent.innerHTML=""; renderTAttribute(tabContent);
       } else if(k==="settings"){
-        S.cfg=await DB.getCfg(); S.students=await DB.getStudents();
+        [S.cfg,S.students]=await Promise.all([DB.getCfg(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTSettings(tabContent);
       }
     }catch(e){
+      console.error("switchTab error",e);
       tabContent.innerHTML="";
       tabContent.append(div({style:{color:"var(--red)",fontSize:"13px",padding:"32px",textAlign:"center"}},[
-        `⚠ 読み込みに失敗しました`,el("br"),
+        `⚠ 読み込みに失敗しました（${e.message}）`,el("br"),
         btn({className:"btn btn-g sm",style:{marginTop:"12px"},onClick:()=>switchTab(k)},["再読み込み"]),
       ]));
     }
@@ -2555,10 +2555,10 @@ async function renderStudent(){
     sTabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},[" 読み込み中..."]));
     try{
       if(k==="uniform"){
-        S.items=await DB.getItems(); S.resp=await DB.getResps();
+        [S.items,S.resp]=await Promise.all([DB.getItems(),DB.getResps()]);
         sTabContent.innerHTML=""; renderSUniform(sTabContent,student);
       } else if(k==="matches"){
-        S.matches=await DB.getMatches(); S.tournaments=await DB.getTournaments();
+        [S.matches,S.tournaments]=await Promise.all([DB.getMatches(),DB.getTournaments()]);
         sTabContent.innerHTML=""; renderSMatches(sTabContent,student);
       } else if(k==="chat"){
         S.chatRooms=await DB.getChatRooms();
@@ -2566,9 +2566,10 @@ async function renderStudent(){
         updateChatBadge(sTabBtns["chat"],student.id);
       }
     }catch(e){
+      console.error("switchSTab error",e);
       sTabContent.innerHTML="";
       sTabContent.append(div({style:{color:"var(--red)",fontSize:"13px",padding:"32px",textAlign:"center"}},[
-        `⚠ 読み込みに失敗しました`,el("br"),
+        `⚠ 読み込みに失敗しました（${e.message}）`,el("br"),
         btn({className:"btn btn-g sm",style:{marginTop:"12px"},onClick:()=>switchSTab(k)},["再読み込み"]),
       ]));
     }
