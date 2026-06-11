@@ -113,6 +113,8 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+// PWAでキャッシュが古いデータを返す問題を防止：常にネットワークから取得
+try{ db.settings({experimentalForceLongPolling:true, merge:true}); }catch(_){}
 
 // compat版のラッパー関数（DB helperがESM版と同じ書き方で動くように）
 const doc        = (database, col, id) => database.collection(col).doc(id);
