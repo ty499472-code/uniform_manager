@@ -179,6 +179,21 @@ const DB = {
       return r;
     }catch(e){ console.warn("getReadMarks",e); return {}; }
   },
+  // 管理機能
+  async getManageCategories(){
+    try{ const s=await withTimeout(getDocs(collection(db,"manage_categories"))); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0)); }catch{ return []; }
+  },
+  async saveManageCategory(c){ await setDoc(doc(db,"manage_categories",c.id),c); },
+  async deleteManageCategory(id){ await deleteDoc(doc(db,"manage_categories",id)); },
+  async getManageSubmissions(categoryId){
+    try{ const s=await withTimeout(getDocs(collection(db,`manage_sub_${categoryId}`))); return s.docs.map(d=>({id:d.id,...d.data()})); }catch{ return []; }
+  },
+  async saveManageSubmission(categoryId,sub){ await setDoc(doc(db,`manage_sub_${categoryId}`,sub.id),sub); },
+  async getManageLedger(categoryId){
+    try{ const s=await withTimeout(getDocs(collection(db,`manage_ledger_${categoryId}`))); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.date.localeCompare(b.date)); }catch{ return []; }
+  },
+  async saveManageLedger(categoryId,entry){ await setDoc(doc(db,`manage_ledger_${categoryId}`,entry.id),entry); },
+  async deleteManageLedger(categoryId,id){ await deleteDoc(doc(db,`manage_ledger_${categoryId}`,id)); },
 };
 
 // ─── Utils ─────────────────────────────────────────────────────────────────────
@@ -635,7 +650,7 @@ function renderTeacher(){
     div({style:{marginLeft:"auto"}},[btn({className:"btn btn-g sm",onClick:()=>render(renderLogin)},["ログアウト"])]),
   ]);
   const content=div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
-  const TABS=[["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["settings","⚙️ 設定"]];
+  const TABS=[["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["manage","🗂 管理"],["settings","⚙️ 設定"]];
   let curTab="items";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
@@ -663,6 +678,9 @@ function renderTeacher(){
       } else if(k==="attribute"){
         S.students=await DB.getStudents();
         tabContent.innerHTML=""; renderTAttribute(tabContent);
+      } else if(k==="manage"){
+        [S.students]=await Promise.all([DB.getStudents()]);
+        tabContent.innerHTML=""; renderTManage(tabContent);
       } else if(k==="settings"){
         [S.cfg,S.students]=await Promise.all([DB.getCfg(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTSettings(tabContent);
@@ -3799,7 +3817,275 @@ function openChatRoomModal(existing, onSave){
   );
   const ov=overlay(box,()=>ov.remove());
 }
-// ─── Google Apps Script コード生成 ──────────────────────────────────────────────
+// ─── 管理タブ ───────────────────────────────────────────────────────────────────
+const DEF_CATEGORIES=[
+  {id:"club_fee",   name:"部費",      amount:0, order:0, color:"#4A9EFF"},
+  {id:"camp_spring",name:"合宿費（春）",amount:0, order:1, color:"#2ECC71"},
+  {id:"camp_summer",name:"合宿費（夏）",amount:0, order:2, color:"#F4A228"},
+];
+
+async function renderTManage(root){
+  root.innerHTML="";
+  let categories=await DB.getManageCategories();
+  // 初回：デフォルトカテゴリを保存
+  if(!categories.length){
+    for(const c of DEF_CATEGORIES){ await DB.saveManageCategory(c); }
+    categories=[...DEF_CATEGORIES];
+  }
+
+  let selCatId=categories[0]?.id||"";
+
+  // ── レイアウト ──
+  const leftCol=div({style:{flex:"0 0 200px",minWidth:0,display:"flex",flexDirection:"column",gap:"6px"}});
+  const rightCol=div({style:{flex:"1 1 0",minWidth:0}});
+  root.append(
+    div({style:{fontSize:"20px",fontWeight:700,marginBottom:"16px"}},["🗂 管理"]),
+    div({style:{display:"flex",gap:"20px",alignItems:"flex-start",flexWrap:"wrap"}},[ leftCol, rightCol ]),
+  );
+
+  const buildRight=async()=>{
+    rightCol.innerHTML="";
+    const cat=categories.find(c=>c.id===selCatId);
+    if(!cat) return;
+    const [subs,ledger]=await Promise.all([
+      DB.getManageSubmissions(cat.id),
+      DB.getManageLedger(cat.id),
+    ]);
+
+    // ── 提出管理簿 ──
+    rightCol.append(div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",paddingBottom:"8px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}},[
+      `📋 提出管理簿 — ${cat.name}`,
+      cat.amount?span({style:{fontSize:"13px",color:"var(--accent)",fontWeight:700}},[`¥${Number(cat.amount).toLocaleString()}`]):"",
+    ]));
+
+    // 対象選手フィルター
+    const grades=[...new Set(S.students.map(s=>s.grade))].sort();
+    let filterGrade="all", filterGender="all";
+    const filterBar=div({style:{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}});
+    const gradeOpts=sel({className:"inp",style:{flex:"0 0 100px"}},[ opt("all","全学年",true), ...grades.map(g=>opt(g,`${g}年`)) ]);
+    const genderOpts=sel({className:"inp",style:{flex:"0 0 100px"}},[ opt("all","全員",true), opt("male","男子"), opt("female","女子"), opt("other","その他") ]);
+    const rebuildTable=()=>{
+      tableWrap.innerHTML="";
+      const filtered=S.students.filter(s=>{
+        const gOk=filterGrade==="all"||s.grade===filterGrade;
+        const gdOk=filterGender==="all"||s.gender===filterGender;
+        return gOk&&gdOk;
+      }).sort((a,b)=>a.grade.localeCompare(b.grade)||a.cls.localeCompare(b.cls)||Number(a.number)-Number(b.number));
+      const submitted=filtered.filter(s=>subs.find(x=>x.studentId===s.id&&x.submitted));
+      const pct=filtered.length?Math.round(submitted.length/filtered.length*100):0;
+      // 進捗バー
+      tableWrap.append(div({style:{marginBottom:"10px"}},[
+        div({style:{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"var(--muted)",marginBottom:"4px"}},[
+          `提出済 ${submitted.length}/${filtered.length}名`,
+          `${pct}%`,
+        ]),
+        div({className:"pb"},[div({className:"pf",style:{width:`${pct}%`}})]),
+      ]));
+      // テーブル
+      const rows=filtered.map(s=>{
+        const sub=subs.find(x=>x.studentId===s.id);
+        const isDone=sub?.submitted||false;
+        const tr=el("tr");
+        tr.append(
+          el("td",{style:{fontSize:"12px",color:"var(--muted)"}},[`${s.grade}年${s.cls}組`]),
+          el("td",{style:{fontWeight:600}},[s.name]),
+          el("td",{},[isDone?badge("b-g","✓ 済"):badge("b-y","未提出")]),
+          el("td",{style:{fontSize:"12px",color:"var(--muted)"}},[sub?.date?fmtDs(sub.date):"—"]),
+          el("td",{style:{padding:"6px 14px"}},[
+            btn({
+              className:isDone?"btn btn-g sm":"btn btn-p sm",
+              onClick:async()=>{
+                const newSub={
+                  id:s.id, studentId:s.id, studentName:s.name,
+                  submitted:!isDone,
+                  date:!isDone?new Date().toISOString().slice(0,10):"",
+                  updatedAt:new Date().toISOString(),
+                };
+                await DB.saveManageSubmission(cat.id,newSub);
+                // ローカル更新
+                const idx=subs.findIndex(x=>x.studentId===s.id);
+                if(idx>=0) subs[idx]=newSub; else subs.push(newSub);
+                rebuildTable();
+              },
+            },[isDone?"取消":"提出済にする"]),
+          ]),
+        );
+        return tr;
+      });
+      tableWrap.append(div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["学年/組"]),el("th",{},["氏名"]),el("th",{},["状態"]),el("th",{},["提出日"]),el("th",{})])]),
+        el("tbody",{},rows),
+      ])]));
+    };
+    gradeOpts.addEventListener("change",e=>{ filterGrade=e.target.value; rebuildTable(); });
+    genderOpts.addEventListener("change",e=>{ filterGender=e.target.value; rebuildTable(); });
+    filterBar.append(gradeOpts,genderOpts);
+    const tableWrap=div({});
+    rightCol.append(filterBar,tableWrap);
+    rebuildTable();
+
+    // ── 収支管理 ──
+    rightCol.append(div({style:{height:"1px",background:"var(--border)",margin:"20px 0"}}));
+    // 収支サマリー
+    const income=ledger.filter(e=>e.type==="income").reduce((a,e)=>a+Number(e.amount||0),0);
+    const expense=ledger.filter(e=>e.type==="expense").reduce((a,e)=>a+Number(e.amount||0),0);
+    rightCol.append(div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center"}},[
+      `💰 収支管理 — ${cat.name}`,
+      btn({className:"btn btn-p sm",onClick:()=>openLedgerModal(cat,ledger,buildRight)},["＋ 記録を追加"]),
+    ]));
+    // サマリーカード
+    rightCol.append(div({style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"16px"}},[
+      div({className:"card",style:{textAlign:"center",padding:"12px"}},[
+        div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["収入合計"]),
+        div({style:{fontSize:"20px",fontWeight:900,color:"var(--green)"}},[`¥${income.toLocaleString()}`]),
+      ]),
+      div({className:"card",style:{textAlign:"center",padding:"12px"}},[
+        div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["支出合計"]),
+        div({style:{fontSize:"20px",fontWeight:900,color:"var(--red)"}},[`¥${expense.toLocaleString()}`]),
+      ]),
+      div({className:"card",style:{textAlign:"center",padding:"12px"}},[
+        div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["残高"]),
+        div({style:{fontSize:"20px",fontWeight:900,color:income-expense>=0?"var(--accent)":"var(--red)"}},[`¥${(income-expense).toLocaleString()}`]),
+      ]),
+    ]));
+    // 収支一覧
+    if(ledger.length){
+      const lrows=[...ledger].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
+        const tr=el("tr");
+        tr.append(
+          el("td",{style:{fontSize:"12px",color:"var(--muted)"}},[fmtDs(e.date)]),
+          el("td",{},[e.description||"—"]),
+          el("td",{},[badge(e.type==="income"?"b-g":"b-r",e.type==="income"?"収入":"支出")]),
+          el("td",{style:{fontWeight:700,color:e.type==="income"?"var(--green)":"var(--red)",textAlign:"right"}},[`¥${Number(e.amount||0).toLocaleString()}`]),
+          el("td",{},[
+            e.receiptImg
+              ? btn({className:"btn btn-g sm",onClick:()=>{
+                  const w=window.open("","_blank");
+                  w.document.write(`<html><body style="margin:0;background:#000"><img src="${e.receiptImg}" style="max-width:100%;max-height:100vh;display:block;margin:auto"></body></html>`);
+                  w.document.close();
+                }},["🖼 領収書"])
+              : "",
+          ]),
+          el("td",{style:{padding:"6px 14px"}},[
+            btn({className:"btn btn-d sm",onClick:async()=>{
+              if(!confirm("削除しますか？"))return;
+              await DB.deleteManageLedger(cat.id,e.id);
+              buildRight();
+            }},["削除"]),
+          ]),
+        );
+        return tr;
+      });
+      rightCol.append(div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["日付"]),el("th",{},["内容"]),el("th",{},["種別"]),el("th",{},["金額"]),el("th",{},["領収書"]),el("th",{})])]),
+        el("tbody",{},lrows),
+      ])]));
+    } else {
+      rightCol.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},["収支記録がありません"]));
+    }
+  };
+
+  const buildLeft=()=>{
+    leftCol.innerHTML="";
+    leftCol.append(div({style:{fontWeight:600,fontSize:"12px",color:"var(--muted)",marginBottom:"8px",padding:"0 4px"}},["種別"]));
+    categories.forEach(c=>{
+      const isActive=selCatId===c.id;
+      const card=div({style:{
+        padding:"10px 12px",borderRadius:"8px",cursor:"pointer",transition:"all .15s",
+        border:`1.5px solid ${isActive?c.color:"var(--border)"}`,
+        background:isActive?`${c.color}18`:"var(--card)",
+        display:"flex",justifyContent:"space-between",alignItems:"center",
+      }});
+      card.append(
+        div({},[
+          div({style:{fontWeight:600,fontSize:"13px",color:isActive?c.color:"var(--text)"}},[c.name]),
+          c.amount?div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[`¥${Number(c.amount).toLocaleString()}`]):"",
+        ]),
+        btn({className:"btn btn-g sm",style:{padding:"2px 6px",fontSize:"10px"},onClick:e=>{ e.stopPropagation(); openCategoryModal(c,async()=>{ categories=await DB.getManageCategories(); buildLeft(); buildRight(); }); }},["編集"]),
+      );
+      card.addEventListener("click",()=>{ selCatId=c.id; buildLeft(); buildRight(); });
+      leftCol.append(card);
+    });
+    leftCol.append(btn({className:"btn btn-g",style:{width:"100%",justifyContent:"center",marginTop:"8px",fontSize:"12px"},onClick:()=>openCategoryModal(null,async()=>{ categories=await DB.getManageCategories(); buildLeft(); if(!selCatId&&categories.length) selCatId=categories[0].id; buildRight(); })},["＋ 種別を追加"]));
+  };
+
+  buildLeft();
+  buildRight();
+}
+
+function openCategoryModal(existing,onSave){
+  let name=existing?.name||"", amount=existing?.amount||"", color=existing?.color||"#4A9EFF";
+  const box=div({className:"mb",style:{maxWidth:"400px"}}); const errEl=div({className:"hidden"});
+  const nameI=inp({className:"inp",placeholder:"例：遠征費",value:name}); nameI.addEventListener("input",e=>name=e.target.value);
+  const amountI=inp({className:"inp",type:"number",placeholder:"例：5000（0の場合は空欄でも可）",value:amount}); amountI.addEventListener("input",e=>amount=e.target.value);
+  const colorRow=div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}});
+  const COLORS=["#4A9EFF","#2ECC71","#F4A228","#E84545","#9B59B6","#1ABC9C","#E67E22"];
+  COLORS.forEach(c=>{
+    const b=div({style:{width:"28px",height:"28px",borderRadius:"50%",background:c,cursor:"pointer",border:`3px solid ${color===c?"#fff":"transparent"}`,transition:"all .15s"}});
+    b.addEventListener("click",()=>{ color=c; colorRow.querySelectorAll("div").forEach(x=>x.style.border=`3px solid ${x.style.background===c?"#fff":"transparent"}`); });
+    colorRow.append(b);
+  });
+  box.append(
+    mhdr(existing?"種別を編集":"＋ 種別を追加",()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"14px"}},[
+      ff("種別名 *",nameI), ff("金額（円）",amountI), ff("カラー",colorRow),
+      existing?btn({className:"btn btn-d sm",style:{alignSelf:"flex-start"},onClick:async()=>{
+        if(!confirm(`「${existing.name}」を削除しますか？`))return;
+        await DB.deleteManageCategory(existing.id); ov.remove(); onSave();
+      }},["この種別を削除"]):"",
+      errEl,
+    ]),
+    mftr(()=>ov.remove(),async()=>{
+      if(!name.trim()) return showErr(errEl,"種別名を入力してください");
+      const cat={id:existing?.id||genId(), name:name.trim(), amount:Number(amount)||0, color, order:existing?.order||Date.now(), createdAt:existing?.createdAt||new Date().toISOString()};
+      await DB.saveManageCategory(cat); ov.remove(); onSave();
+    },existing?"更新":"追加"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
+
+function openLedgerModal(cat,ledger,onSave){
+  let lType="income", lDate=new Date().toISOString().slice(0,10), lAmount="", lDesc="", lImg=null;
+  const box=div({className:"mb",style:{maxWidth:"440px"}}); const errEl=div({className:"hidden"});
+  const fileI=inp({type:"file",accept:"image/*",style:{display:"none"}});
+  const imgPrev=div({style:{width:"80px",height:"80px",borderRadius:"8px",border:"2px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:"24px",overflow:"hidden",flexShrink:0}},["🧾"]);
+  imgPrev.addEventListener("click",()=>fileI.click());
+  fileI.addEventListener("change",e=>{
+    const f=e.target.files[0]; if(!f) return;
+    compressImage(f,img=>{ lImg=img; imgPrev.innerHTML=""; imgPrev.append(el("img",{src:img,style:{width:"100%",height:"100%",objectFit:"cover"}})); });
+  });
+  const typeBtns={};
+  const typeRow=div({style:{display:"flex",gap:"8px"}});
+  [["income","💰 収入"],["expense","💸 支出"]].forEach(([v,l])=>{
+    const b=btn({className:`sc ${lType===v?"on":""}`,style:{flex:1,justifyContent:"center"},onClick:()=>{
+      lType=v; Object.keys(typeBtns).forEach(k=>typeBtns[k].classList.toggle("on",k===v));
+    }},[l]);
+    typeBtns[v]=b; typeRow.append(b);
+  });
+  const dateI=inp({className:"inp",type:"date",value:lDate}); dateI.addEventListener("input",e=>lDate=e.target.value);
+  const amountI=inp({className:"inp",type:"number",placeholder:"金額（円）"}); amountI.addEventListener("input",e=>lAmount=e.target.value);
+  const descI=inp({className:"inp",placeholder:"例：4月分部費収納"}); descI.addEventListener("input",e=>lDesc=e.target.value);
+  box.append(
+    mhdr(`💰 収支記録 — ${cat.name}`,()=>ov.remove()),
+    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"14px"}},[
+      ff("種別",typeRow), ff("日付 *",dateI), ff("金額（円）*",amountI), ff("内容",descI),
+      ff("領収書（任意）",div({style:{display:"flex",alignItems:"center",gap:"12px"}},[
+        imgPrev,
+        div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.7}},["タップして写真を追加",el("br"),"撮影またはアルバムから選択"]),
+        fileI,
+      ])),
+      errEl,
+    ]),
+    mftr(()=>ov.remove(),async()=>{
+      if(!lDate) return showErr(errEl,"日付を入力してください");
+      if(!lAmount||Number(lAmount)<=0) return showErr(errEl,"金額を入力してください");
+      const entry={id:genId(), type:lType, date:lDate, amount:Number(lAmount), description:lDesc.trim(), receiptImg:lImg, createdAt:new Date().toISOString()};
+      await DB.saveManageLedger(cat.id,entry);
+      ov.remove(); onSave();
+    },"記録する"),
+  );
+  const ov=overlay(box,()=>ov.remove());
+}
 function generateGasCode(){
   const projectId="seikyobadomintonmanager";
   const apiKey="AIzaSyB6TbrWqu2CAzggiCqzcvr06mwnDOdEZk4";
