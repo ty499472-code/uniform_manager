@@ -2929,18 +2929,25 @@ function renderSMatches(root,student){
       if(!mOpponentName.trim()) return showErr(errEl,"相手の名前を入力してください");
       if(!mOpponentSchool.trim()) return showErr(errEl,"相手の学校を入力してください");
       if(mType==="tournament"&&!mTournamentId) return showErr(errEl,"大会を選択してください");
-      const scores=mScoreMode!=="none"?mSets.filter(s=>s.my!=""||s.opp!="").map(s=>({my:Number(s.my)||0,opp:Number(s.opp)||0})):[];
-      const m={
-        id:genId(), studentId:student.id, studentName:student.name,
-        type:mType, tournamentId:mType==="tournament"?mTournamentId:"",
-        category:mCategory, result:mResult,
-        date:mDate, opponentName:mOpponentName.trim(), opponentSchool:mOpponentSchool.trim(),
-        scores, note:mNote.trim(), createdAt:new Date().toISOString(),
-      };
-      await DB.saveMatch(m);
-      S.matches.push(m);
-      buildHistory();
-      buildForm(); // フォームリセット
+      // 二重送信防止
+      submitBtn.disabled=true; submitBtn.textContent="保存中...";
+      try{
+        const scores=mScoreMode!=="none"?mSets.filter(s=>s.my!=""||s.opp!="").map(s=>({my:Number(s.my)||0,opp:Number(s.opp)||0})):[];
+        const m={
+          id:genId(), studentId:student.id, studentName:student.name,
+          type:mType, tournamentId:mType==="tournament"?mTournamentId:"",
+          category:mCategory, result:mResult,
+          date:mDate, opponentName:mOpponentName.trim(), opponentSchool:mOpponentSchool.trim(),
+          scores, note:mNote.trim(), createdAt:new Date().toISOString(),
+        };
+        await DB.saveMatch(m);
+        S.matches.push(m);
+        buildHistory();
+        buildForm(); // フォームリセット
+      }catch(e){
+        submitBtn.disabled=false; submitBtn.textContent="✅ 記録する";
+        showErr(errEl,"保存に失敗しました。再度お試しください。");
+      }
     }},["✅ 記録する"]);
 
     leftCol.append(
