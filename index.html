@@ -1580,6 +1580,7 @@ function renderTStudents(root){
             el("td",{},[s.registered?badge("b-g","✓ 済"):badge("b-y","未")]),
             el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
             el("td",{style:{display:"flex",gap:"5px",flexWrap:"wrap",padding:"8px 14px"}},[
+              btn({className:"btn btn-g sm",style:{background:"rgba(46,204,113,.12)",color:"var(--green)",border:"1px solid rgba(46,204,113,.3)"},onClick:()=>openStudentPreview(s)},["👁"]),
               s.registered
                 ? btn({className:"btn btn-b sm",onClick:()=>openPwModal(s,rebuild)},["🔑 PW"])
                 : span({style:{fontSize:"11px",color:"var(--muted)",lineHeight:"28px"}},["未登録"]),
@@ -1623,6 +1624,62 @@ function renderTStudents(root){
     });
   };
   rebuild();
+}
+
+// ── 選手画面プレビュー（教員用）────────────────────────────────────────────────
+function openStudentPreview(student){
+  const box=div({className:"mb",style:{maxWidth:"900px",width:"100%"}});
+
+  // ヘッダー
+  const gLabel={male:"男性",female:"女性",other:"その他"}[student.gender]||"";
+  box.append(div({style:{
+    padding:"14px 20px",background:"var(--navy)",borderBottom:"1px solid var(--border)",
+    display:"flex",justifyContent:"space-between",alignItems:"center",
+  }},[
+    div({style:{display:"flex",alignItems:"center",gap:"12px"}},[
+      div({style:{width:"36px",height:"36px",borderRadius:"50%",background:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",fontWeight:700,color:"#000",flexShrink:0}},[student.name[0]]),
+      div({},[
+        div({style:{fontWeight:700,fontSize:"14px",display:"flex",alignItems:"center",gap:"8px"}},[
+          student.name,
+          badge("b-y","👁 プレビューモード"),
+        ]),
+        div({style:{fontSize:"11px",color:"var(--muted)"}},[`${student.grade}年${student.cls}組 No.${student.number} · ${gLabel}`]),
+      ]),
+    ]),
+    btn({className:"btn btn-g sm",onClick:()=>ov.remove()},["✕ 閉じる"]),
+  ]));
+
+  // タブ（選手と同じ構成）
+  const PTABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"]];
+  let pCurTab="uniform";
+  const pTabBar=div({className:"tabs",style:{margin:"16px 20px 0"}});
+  const pTabBtns={};
+  const pContent=div({style:{padding:"20px"}});
+
+  const switchPTab=async k=>{
+    pCurTab=k; PTABS.forEach(([tk])=>pTabBtns[tk].className=`tab ${tk===k?"on":""}`);
+    pContent.innerHTML="";
+    pContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},[" 読み込み中..."]));
+    if(k==="uniform"){
+      [S.items,S.resp]=await Promise.all([DB.getItems(),DB.getResps()]);
+      pContent.innerHTML="";
+      renderSUniform(pContent,student);
+    } else if(k==="matches"){
+      [S.matches,S.tournaments]=await Promise.all([DB.getMatches(),DB.getTournaments()]);
+      pContent.innerHTML="";
+      renderSMatches(pContent,student);
+    }
+  };
+
+  PTABS.forEach(([k,l])=>{
+    const b=btn({className:`tab ${k===pCurTab?"on":""}`,onClick:()=>switchPTab(k)},[l]);
+    pTabBtns[k]=b; pTabBar.append(b);
+  });
+
+  box.append(pTabBar, pContent);
+  switchPTab("uniform");
+
+  const ov=overlay(box,()=>ov.remove());
 }
 
 // 選手一覧CSV出力
