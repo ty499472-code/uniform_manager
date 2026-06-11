@@ -3856,6 +3856,64 @@ async function renderTManage(root){
       DB.getManageLedger(cat.id),
     ]);
 
+    // ── 収支管理（上部に配置）──
+    const calcSummary=()=>{
+      const inc=ledger.filter(e=>e.type==="income").reduce((a,e)=>a+Number(e.amount||0),0);
+      const exp=ledger.filter(e=>e.type==="expense").reduce((a,e)=>a+Number(e.amount||0),0);
+      return {inc,exp,bal:inc-exp};
+    };
+    const summaryEl=div({style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"12px"}});
+    const renderSummary=()=>{
+      const {inc,exp,bal}=calcSummary();
+      summaryEl.innerHTML="";
+      summaryEl.append(
+        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["収入合計"]),div({style:{fontSize:"20px",fontWeight:900,color:"var(--green)"}},[`¥${inc.toLocaleString()}`])]),
+        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["支出合計"]),div({style:{fontSize:"20px",fontWeight:900,color:"var(--red)"}},[`¥${exp.toLocaleString()}`])]),
+        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["残高"]),div({style:{fontSize:"20px",fontWeight:900,color:bal>=0?"var(--accent)":"var(--red)"}},[`¥${bal.toLocaleString()}`])]),
+      );
+    };
+    const updateSummary=()=>renderSummary();
+
+    // 収支明細（折り畳み）
+    let ledgerOpen=false;
+    const ledgerArrow=span({style:{color:"var(--accent)",fontSize:"14px",transition:"transform .2s",transform:"rotate(-90deg)"}},["▼"]);
+    const ledgerHdr=div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none"}},[
+      div({style:{display:"flex",alignItems:"center",gap:"8px"}},[`💰 収支管理 — ${cat.name}`, ledgerArrow]),
+      btn({className:"btn btn-p sm",onClick:e=>{ e.stopPropagation(); openLedgerModal(cat,ledger,buildRight); }},["＋ 記録を追加"]),
+    ]);
+    const ledgerBody=div({style:{display:"none"}});
+    if(ledger.length){
+      const lrows=[...ledger].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
+        const tr=el("tr");
+        tr.append(
+          el("td",{style:{fontSize:"12px",color:"var(--muted)"}},[fmtDs(e.date)]),
+          el("td",{},[e.description||"—"]),
+          el("td",{},[badge(e.type==="income"?"b-g":"b-r",e.type==="income"?"収入":"支出")]),
+          el("td",{style:{fontWeight:700,color:e.type==="income"?"var(--green)":"var(--red)",textAlign:"right"}},[`¥${Number(e.amount||0).toLocaleString()}`]),
+          el("td",{},[e.receiptImg?btn({className:"btn btn-g sm",onClick:()=>{ const w=window.open("","_blank"); w.document.write(`<html><body style="margin:0;background:#000"><img src="${e.receiptImg}" style="max-width:100%;max-height:100vh;display:block;margin:auto"></body></html>`); w.document.close(); }},["🖼 領収書"]):""]),
+          el("td",{style:{padding:"6px 14px"}},[btn({className:"btn btn-d sm",onClick:async()=>{ if(!confirm("削除しますか？"))return; await DB.deleteManageLedger(cat.id,e.id); buildRight(); }},["削除"])]),
+        );
+        return tr;
+      });
+      ledgerBody.append(div({className:"tw",style:{marginBottom:"16px"}},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["日付"]),el("th",{},["内容"]),el("th",{},["種別"]),el("th",{},["金額"]),el("th",{},["領収書"]),el("th",{})])]),
+        el("tbody",{},lrows),
+      ])]));
+    } else {
+      ledgerBody.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"12px 0",textAlign:"center"}},["収支記録がありません"]));
+    }
+    ledgerHdr.addEventListener("click",()=>{
+      ledgerOpen=!ledgerOpen;
+      ledgerBody.style.display=ledgerOpen?"block":"none";
+      ledgerArrow.style.transform=ledgerOpen?"":"rotate(-90deg)";
+    });
+
+    rightCol.append(ledgerHdr, summaryEl, ledgerBody);
+    renderSummary();
+
+    // 区切り線
+    rightCol.append(div({style:{height:"1px",background:"var(--border)",margin:"20px 0"}}));
+
     // ── 提出管理簿 ──
     rightCol.append(div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",paddingBottom:"8px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}},[
       `📋 提出管理簿 — ${cat.name}`,
@@ -3956,70 +4014,6 @@ async function renderTManage(root){
     const tableWrap=div({});
     rightCol.append(filterBar,tableWrap);
     rebuildTable();
-
-    // ── 収支管理 ──
-    rightCol.append(div({style:{height:"1px",background:"var(--border)",margin:"20px 0"}}));
-    // 収支サマリー
-    const calcSummary=()=>{
-      const inc=ledger.filter(e=>e.type==="income").reduce((a,e)=>a+Number(e.amount||0),0);
-      const exp=ledger.filter(e=>e.type==="expense").reduce((a,e)=>a+Number(e.amount||0),0);
-      return {inc,exp,bal:inc-exp};
-    };
-    const summaryEl=div({style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"16px"}});
-    const renderSummary=()=>{
-      const {inc,exp,bal}=calcSummary();
-      summaryEl.innerHTML="";
-      summaryEl.append(
-        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["収入合計"]),div({style:{fontSize:"20px",fontWeight:900,color:"var(--green)"}},[`¥${inc.toLocaleString()}`])]),
-        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["支出合計"]),div({style:{fontSize:"20px",fontWeight:900,color:"var(--red)"}},[`¥${exp.toLocaleString()}`])]),
-        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["残高"]),div({style:{fontSize:"20px",fontWeight:900,color:bal>=0?"var(--accent)":"var(--red)"}},[`¥${bal.toLocaleString()}`])]),
-      );
-    };
-    // updateSummary：提出ボタン押下時に呼ばれる（収支サマリーだけ更新）
-    const updateSummary=()=>renderSummary();
-    const income=calcSummary().inc;
-    const expense=calcSummary().exp;
-    rightCol.append(div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center"}},[
-      `💰 収支管理 — ${cat.name}`,
-      btn({className:"btn btn-p sm",onClick:()=>openLedgerModal(cat,ledger,buildRight)},["＋ 記録を追加"]),
-    ]));
-    renderSummary();
-    rightCol.append(summaryEl);
-    // 収支一覧
-    if(ledger.length){
-      const lrows=[...ledger].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
-        const tr=el("tr");
-        tr.append(
-          el("td",{style:{fontSize:"12px",color:"var(--muted)"}},[fmtDs(e.date)]),
-          el("td",{},[e.description||"—"]),
-          el("td",{},[badge(e.type==="income"?"b-g":"b-r",e.type==="income"?"収入":"支出")]),
-          el("td",{style:{fontWeight:700,color:e.type==="income"?"var(--green)":"var(--red)",textAlign:"right"}},[`¥${Number(e.amount||0).toLocaleString()}`]),
-          el("td",{},[
-            e.receiptImg
-              ? btn({className:"btn btn-g sm",onClick:()=>{
-                  const w=window.open("","_blank");
-                  w.document.write(`<html><body style="margin:0;background:#000"><img src="${e.receiptImg}" style="max-width:100%;max-height:100vh;display:block;margin:auto"></body></html>`);
-                  w.document.close();
-                }},["🖼 領収書"])
-              : "",
-          ]),
-          el("td",{style:{padding:"6px 14px"}},[
-            btn({className:"btn btn-d sm",onClick:async()=>{
-              if(!confirm("削除しますか？"))return;
-              await DB.deleteManageLedger(cat.id,e.id);
-              buildRight();
-            }},["削除"]),
-          ]),
-        );
-        return tr;
-      });
-      rightCol.append(div({className:"tw"},[el("table",{},[
-        el("thead",{},[el("tr",{},[el("th",{},["日付"]),el("th",{},["内容"]),el("th",{},["種別"]),el("th",{},["金額"]),el("th",{},["領収書"]),el("th",{})])]),
-        el("tbody",{},lrows),
-      ])]));
-    } else {
-      rightCol.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},["収支記録がありません"]));
-    }
   };
 
   const buildLeft=()=>{
