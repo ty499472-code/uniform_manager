@@ -2675,9 +2675,11 @@ async function renderStudent(){
     }
   };
   STABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===sCurTab?"on":""}`,onClick:()=>switchSTab(k)},[l]); sTabBtns[k]=b; sTabBar.append(b); });
-  switchSTab("uniform");
   content.append(sTabBar,sTabContent);
   app.append(hdr,content);
+  switchSTab("uniform");
+  // バッジ更新は画面表示後に非同期で実行（タブ表示を妨げない）
+  setTimeout(()=>updateChatBadge(sTabBtns["chat"],student.id),2000);
 }
 
 function renderSUniform(root,student){
@@ -2730,6 +2732,13 @@ function renderSUniform(root,student){
     ])));
   }
   if(!S.items.length) root.append(emptyState("🎽","現在、回答が必要な項目はありません"));
+}
+
+function statCard(label,value,color){
+  return div({className:"card",style:{textAlign:"center",padding:"12px"}},[
+    div({style:{fontSize:"22px",fontWeight:900,color,fontFamily:"'Bebas Neue',sans-serif",lineHeight:1}},[String(value)]),
+    div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"4px"}},[label]),
+  ]);
 }
 
 function renderSMatches(root,student){
