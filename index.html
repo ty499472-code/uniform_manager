@@ -421,7 +421,8 @@ function renderStudentUnified(wrap){
 
   const rebuildHdr=()=>{
     hdr.innerHTML="";
-    const steps=found?.registered?["選手選択","生年月日確認","パスワード"]:["選手選択","生年月日確認","PW設定"];
+    // 登録済みは2ステップ、未登録は3ステップ
+    const steps=found?.registered?["選手選択","パスワード"]:["選手選択","生年月日確認","PW設定"];
     hdr.append(
       div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px"}},["👕 選手ログイン"]),
       stepBar(steps,step),
@@ -503,7 +504,10 @@ function renderStudentUnified(wrap){
           btn({className:"btn btn-p",disabled:!selectedStudent,onClick:()=>{
             if(!selectedStudent) return;
             found=selectedStudent;
-            step=2; rebuildHdr(); buildStep2();
+            step=2; rebuildHdr();
+            // 登録済みはパスワード入力へ直行、未登録は生年月日確認へ
+            if(found.registered) buildStep3Login();
+            else buildStep2();
           }},["次へ →"]),
         );
       };
