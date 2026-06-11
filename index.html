@@ -3937,8 +3937,8 @@ async function renderTManage(root){
                 const idx=subs.findIndex(x=>x.studentId===s.id);
                 if(idx>=0) subs[idx]=newSub; else subs.push(newSub);
                 rebuildTable();
-                // 収支サマリーを更新
-                buildRight();
+                // 収支サマリーだけ更新（画面全体を再描画しない）
+                updateSummary();
               },
             },[isDone?"取消":"提出済にする"]),
           ]),
@@ -3960,27 +3960,31 @@ async function renderTManage(root){
     // ── 収支管理 ──
     rightCol.append(div({style:{height:"1px",background:"var(--border)",margin:"20px 0"}}));
     // 収支サマリー
-    const income=ledger.filter(e=>e.type==="income").reduce((a,e)=>a+Number(e.amount||0),0);
-    const expense=ledger.filter(e=>e.type==="expense").reduce((a,e)=>a+Number(e.amount||0),0);
+    const calcSummary=()=>{
+      const inc=ledger.filter(e=>e.type==="income").reduce((a,e)=>a+Number(e.amount||0),0);
+      const exp=ledger.filter(e=>e.type==="expense").reduce((a,e)=>a+Number(e.amount||0),0);
+      return {inc,exp,bal:inc-exp};
+    };
+    const summaryEl=div({style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"16px"}});
+    const renderSummary=()=>{
+      const {inc,exp,bal}=calcSummary();
+      summaryEl.innerHTML="";
+      summaryEl.append(
+        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["収入合計"]),div({style:{fontSize:"20px",fontWeight:900,color:"var(--green)"}},[`¥${inc.toLocaleString()}`])]),
+        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["支出合計"]),div({style:{fontSize:"20px",fontWeight:900,color:"var(--red)"}},[`¥${exp.toLocaleString()}`])]),
+        div({className:"card",style:{textAlign:"center",padding:"12px"}},[div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["残高"]),div({style:{fontSize:"20px",fontWeight:900,color:bal>=0?"var(--accent)":"var(--red)"}},[`¥${bal.toLocaleString()}`])]),
+      );
+    };
+    // updateSummary：提出ボタン押下時に呼ばれる（収支サマリーだけ更新）
+    const updateSummary=()=>renderSummary();
+    const income=calcSummary().inc;
+    const expense=calcSummary().exp;
     rightCol.append(div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center"}},[
       `💰 収支管理 — ${cat.name}`,
       btn({className:"btn btn-p sm",onClick:()=>openLedgerModal(cat,ledger,buildRight)},["＋ 記録を追加"]),
     ]));
-    // サマリーカード
-    rightCol.append(div({style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"16px"}},[
-      div({className:"card",style:{textAlign:"center",padding:"12px"}},[
-        div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["収入合計"]),
-        div({style:{fontSize:"20px",fontWeight:900,color:"var(--green)"}},[`¥${income.toLocaleString()}`]),
-      ]),
-      div({className:"card",style:{textAlign:"center",padding:"12px"}},[
-        div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["支出合計"]),
-        div({style:{fontSize:"20px",fontWeight:900,color:"var(--red)"}},[`¥${expense.toLocaleString()}`]),
-      ]),
-      div({className:"card",style:{textAlign:"center",padding:"12px"}},[
-        div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"4px"}},["残高"]),
-        div({style:{fontSize:"20px",fontWeight:900,color:income-expense>=0?"var(--accent)":"var(--red)"}},[`¥${(income-expense).toLocaleString()}`]),
-      ]),
-    ]));
+    renderSummary();
+    rightCol.append(summaryEl);
     // 収支一覧
     if(ledger.length){
       const lrows=[...ledger].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
