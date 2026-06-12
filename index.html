@@ -197,6 +197,12 @@ const DB = {
   },
   async saveManageLedger(categoryId,entry){ await setDoc(doc(db,`manage_ledger_${categoryId}`,entry.id),entry); },
   async deleteManageLedger(categoryId,id){ await deleteDoc(doc(db,`manage_ledger_${categoryId}`,id)); },
+  // 目標設定
+  async getGoals(studentId){
+    try{ const s=await withTimeout(getDocs(collection(db,`goals_${studentId}`))); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")); }catch{ return []; }
+  },
+  async saveGoal(studentId,goal){ await setDoc(doc(db,`goals_${studentId}`,goal.id),goal); },
+  async deleteGoal(studentId,id){ await deleteDoc(doc(db,`goals_${studentId}`,id)); },
 };
 
 // ─── Utils ─────────────────────────────────────────────────────────────────────
@@ -2626,7 +2632,7 @@ async function renderStudent(){
   ]);
 
   const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"24px"}});
-  const STABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"]];
+  const STABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"],["goal","🎯 目標設定"]];
   let sCurTab="uniform";
   const sTabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const sTabBtns={};
@@ -2646,6 +2652,8 @@ async function renderStudent(){
         S.chatRooms=await DB.getChatRooms();
         sTabContent.innerHTML=""; renderChat(sTabContent,student.id,student.name);
         updateChatBadge(sTabBtns["chat"],student.id);
+      } else if(k==="goal"){
+        sTabContent.innerHTML=""; renderSGoal(sTabContent,student);
       }
     }catch(e){
       console.error("switchSTab error",e);
@@ -4211,6 +4219,238 @@ async function generateSettlementPdf(categories,title,fiscalYear){
 ${catSections}</body></html>`);
   win.document.close();
   setTimeout(()=>win.print(),800);
+}
+
+// ─── 目標設定タブ ───────────────────────────────────────────────────────────────
+async function renderSGoal(root, student){
+  root.innerHTML="";
+  root.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},["読み込み中..."]));
+  const goals=await DB.getGoals(student.id);
+  root.innerHTML="";
+
+  const GTABS=[["match","🎯 試合目標"],["annual","🏆 年間目標"],["memo","📝 一言記録"],["review","📊 振り返り"]];
+  let gTab="match";
+  const gTabBar=div({className:"tabs",style:{marginBottom:"20px"}});
+  const gTabBtns={};
+  const gContent=div({});
+
+  const switchGTab=k=>{
+    gTab=k; GTABS.forEach(([tk])=>gTabBtns[tk].className=`tab ${tk===k?"on":""}`);
+    gContent.innerHTML="";
+    if(k==="match")  buildMatchGoal();
+    if(k==="annual") buildAnnualGoal();
+    if(k==="memo")   buildMemo();
+    if(k==="review") buildReview();
+  };
+  GTABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===gTab?"on":""}`,onClick:()=>switchGTab(k)},[l]); gTabBtns[k]=b; gTabBar.append(b); });
+  root.append(gTabBar, gContent);
+
+  const getLatest=(type)=>goals.find(g=>g.type===type)||null;
+  const getAll=(type)=>goals.filter(g=>g.type===type);
+
+  // ── 🎯 次の試合目標 ──
+  const buildMatchGoal=()=>{
+    gContent.innerHTML="";
+    const latest=getLatest("match_goal");
+    const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"12px"}},["✓ 保存しました"]);
+    const showSaved=()=>{ savedEl.className=""; setTimeout(()=>savedEl.className="hidden",2000); };
+    let opp=latest?.opponent||"", date=latest?.date||"";
+    const oppI=inp({className:"inp",placeholder:"例：○○高校"}); oppI.value=opp; oppI.addEventListener("input",e=>opp=e.target.value);
+    const dateI=inp({className:"inp",type:"date"}); dateI.value=date; dateI.addEventListener("input",e=>date=e.target.value);
+    const CATS=[
+      {key:"physical", label:"💪 体力",  placeholder:"例：最後まで足を動かし続ける"},
+      {key:"technical",label:"🏸 技術",  placeholder:"例：バック奥のクリアを安定させる"},
+      {key:"mental",   label:"🧠 メンタル",placeholder:"例：ミスしても切り替えて次に集中する"},
+    ];
+    const vals={};
+    CATS.forEach(c=>{ vals[c.key]={goal:latest?.[c.key]?.goal||"", score:latest?.[c.key]?.score||0}; });
+    const catEls=CATS.map(c=>{
+      const tI=ta({className:"inp",rows:2},vals[c.key].goal); tI.placeholder=c.placeholder; tI.addEventListener("input",e=>vals[c.key].goal=e.target.value);
+      const scoreRow=div({style:{display:"flex",gap:"6px",marginTop:"8px"}});
+      const stars=[];
+      for(let i=1;i<=5;i++){
+        const s=btn({className:"sc",style:{flex:1,justifyContent:"center",fontSize:"18px",padding:"6px 0",color:i<=vals[c.key].score?"var(--accent)":"var(--navy-light)",borderColor:i<=vals[c.key].score?"var(--accent)":"var(--border)"}},[" ★"]);
+        s.addEventListener("click",()=>{
+          vals[c.key].score=i;
+          stars.forEach((x,j)=>{
+            x.style.color=j+1<=i?"var(--accent)":"var(--navy-light)";
+            x.style.borderColor=j+1<=i?"var(--accent)":"var(--border)";
+          });
+        });
+        stars.push(s); scoreRow.append(s);
+      }
+      return div({className:"card",style:{marginBottom:"12px"}},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"10px"}},[c.label]),
+        ff("目標",tI),
+        div({style:{marginTop:"8px"}},[
+          div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"6px"}},["達成度（試合後に記録）"]),
+          scoreRow,
+        ]),
+      ]);
+    });
+    gContent.append(
+      div({style:{fontSize:"16px",fontWeight:700,marginBottom:"16px"}},["🎯 次の試合目標"]),
+      div({className:"card",style:{marginBottom:"16px"}},[
+        div({className:"grid2"},[ff("対戦相手",oppI),ff("試合日",dateI)]),
+      ]),
+      ...catEls,
+      div({style:{display:"flex",gap:"8px",alignItems:"center"}},[
+        btn({className:"btn btn-p",onClick:async()=>{
+          const goal={id:genId(),type:"match_goal",opponent:opp,date,
+            ...Object.fromEntries(CATS.map(c=>[c.key,{...vals[c.key]}])),
+            createdAt:new Date().toISOString()};
+          await DB.saveGoal(student.id,goal);
+          goals.unshift(goal);
+          showSaved();
+        }},["💾 保存する"]),
+        savedEl,
+      ]),
+    );
+  };
+
+  // ── 🏆 年間目標 ──
+  const buildAnnualGoal=()=>{
+    gContent.innerHTML="";
+    const latest=getLatest("annual_goal");
+    const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"12px"}},["✓ 保存しました"]);
+    const showSaved=()=>{ savedEl.className=""; setTimeout(()=>savedEl.className="hidden",2000); };
+    const AREAS=[
+      {key:"technical", label:"🏸 技術面",  placeholder:"例：シングルスでレギュラーになる"},
+      {key:"humanity",  label:"🤝 人間性",   placeholder:"例：後輩の手本となる行動をする"},
+      {key:"lifestyle", label:"🌅 生活面",   placeholder:"例：毎朝6時に起きて自主練する"},
+      {key:"mental",    label:"🧠 精神面",   placeholder:"例：どんな場面でも平常心を保つ"},
+    ];
+    const vals={};
+    AREAS.forEach(a=>{ vals[a.key]=latest?.[a.key]||""; });
+    let year=latest?.year||new Date().getFullYear();
+    const yearI=inp({className:"inp",type:"number",value:year,style:{maxWidth:"120px"}}); yearI.addEventListener("input",e=>year=Number(e.target.value));
+    const areaEls=AREAS.map(a=>{
+      const tI=ta({className:"inp",rows:3},vals[a.key]); tI.placeholder=a.placeholder; tI.addEventListener("input",e=>vals[a.key]=e.target.value);
+      return div({className:"card",style:{marginBottom:"12px"}},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"10px"}},[a.label]),tI,
+      ]);
+    });
+    gContent.append(
+      div({style:{fontSize:"16px",fontWeight:700,marginBottom:"16px"}},["🏆 年間目標"]),
+      ff("対象年度",yearI),
+      div({style:{height:"1px",background:"var(--border)",margin:"12px 0"}}),
+      ...areaEls,
+      div({style:{display:"flex",gap:"8px",alignItems:"center"}},[
+        btn({className:"btn btn-p",onClick:async()=>{
+          const goal={id:genId(),type:"annual_goal",year,
+            ...Object.fromEntries(AREAS.map(a=>[a.key,vals[a.key]])),
+            createdAt:new Date().toISOString()};
+          await DB.saveGoal(student.id,goal);
+          goals.unshift(goal);
+          showSaved();
+        }},["💾 保存する"]),
+        savedEl,
+      ]),
+    );
+  };
+
+  // ── 📝 一言記録 ──
+  const buildMemo=()=>{
+    gContent.innerHTML="";
+    const memos=getAll("memo");
+    const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"12px"}},["✓ 保存しました"]);
+    const showSaved=()=>{ savedEl.className=""; setTimeout(()=>savedEl.className="hidden",2000); };
+    let memoText="", memoDate=new Date().toISOString().slice(0,10);
+    const memoI=ta({className:"inp",rows:3},""); memoI.placeholder="今日の気づき・練習メモ・感想など"; memoI.addEventListener("input",e=>memoText=e.target.value);
+    const dateI=inp({className:"inp",type:"date",value:memoDate}); dateI.addEventListener("input",e=>memoDate=e.target.value);
+    const listEl=div({});
+    const buildList=()=>{
+      listEl.innerHTML="";
+      if(!memos.length){ listEl.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},["まだ記録がありません"])); return; }
+      memos.slice(0,50).forEach(m=>{
+        listEl.append(div({style:{padding:"12px",marginBottom:"8px",background:"var(--card)",borderRadius:"8px",border:"1px solid var(--border)"}},[
+          div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}},[
+            span({style:{fontSize:"12px",color:"var(--muted)"}},[fmtDs(m.date||m.createdAt)]),
+            btn({className:"btn btn-d sm",style:{padding:"1px 8px",fontSize:"10px"},onClick:async()=>{
+              if(!confirm("削除しますか？"))return;
+              await DB.deleteGoal(student.id,m.id);
+              memos.splice(memos.indexOf(m),1); buildList();
+            }},["×"]),
+          ]),
+          div({style:{fontSize:"13px",lineHeight:1.7,whiteSpace:"pre-wrap"}},[m.text]),
+        ]));
+      });
+    };
+    buildList();
+    gContent.append(
+      div({style:{fontSize:"16px",fontWeight:700,marginBottom:"16px"}},["📝 一言記録"]),
+      div({className:"card",style:{marginBottom:"16px"}},[
+        ff("日付",dateI),
+        div({style:{marginTop:"10px"}},[memoI]),
+        div({style:{marginTop:"10px",display:"flex",gap:"8px",alignItems:"center"}},[
+          btn({className:"btn btn-p",onClick:async()=>{
+            if(!memoText.trim()) return;
+            const goal={id:genId(),type:"memo",date:memoDate,text:memoText.trim(),createdAt:new Date().toISOString()};
+            await DB.saveGoal(student.id,goal);
+            memos.unshift(goal);
+            memoI.value=""; memoText="";
+            buildList(); showSaved();
+          }},["💾 記録する"]),
+          savedEl,
+        ]),
+      ]),
+      div({style:{fontWeight:600,fontSize:"14px",marginBottom:"10px"}},["過去の記録"]),
+      listEl,
+    );
+  };
+
+  // ── 📊 振り返り ──
+  const buildReview=()=>{
+    gContent.innerHTML="";
+    const matchGoals=getAll("match_goal");
+    const annualGoals=getAll("annual_goal");
+    gContent.append(div({style:{fontSize:"16px",fontWeight:700,marginBottom:"16px"}},["📊 振り返り"]));
+    const stars=n=>Array.from({length:5},(_,i)=>span({style:{color:i<n?"var(--accent)":"var(--navy-light)",fontSize:"14px"}},["★"]));
+
+    if(annualGoals.length){
+      gContent.append(div({style:{fontWeight:600,fontSize:"14px",marginBottom:"10px",color:"var(--accent)"}},[`🏆 年間目標（${annualGoals.length}件）`]));
+      annualGoals.forEach(g=>{
+        const areas=[["🏸 技術面",g.technical],["🤝 人間性",g.humanity],["🌅 生活面",g.lifestyle],["🧠 精神面",g.mental]].filter(([,v])=>v);
+        gContent.append(div({className:"card",style:{marginBottom:"10px"}},[
+          div({style:{display:"flex",justifyContent:"space-between",marginBottom:"10px"}},[
+            div({style:{fontWeight:700}},[`${g.year||""}年度`]),
+            span({style:{fontSize:"11px",color:"var(--muted)"}},[fmtDs(g.createdAt)]),
+          ]),
+          ...areas.map(([l,v])=>div({style:{marginBottom:"5px"}},[
+            span({style:{fontSize:"11px",fontWeight:700,color:"var(--muted)"}},[l+" "]),
+            span({style:{fontSize:"13px"}},[v]),
+          ])),
+        ]));
+      });
+    }
+
+    if(matchGoals.length){
+      gContent.append(div({style:{fontWeight:600,fontSize:"14px",marginBottom:"10px",marginTop:"16px",color:"var(--accent)"}},[`🎯 試合目標（${matchGoals.length}件）`]));
+      const CLABELS={physical:"💪 体力",technical:"🏸 技術",mental:"🧠 メンタル"};
+      matchGoals.forEach(g=>{
+        gContent.append(div({className:"card",style:{marginBottom:"10px"}},[
+          div({style:{display:"flex",justifyContent:"space-between",marginBottom:"10px"}},[
+            div({style:{fontWeight:700}},[g.opponent?`vs ${g.opponent}`:"試合",g.date?span({style:{fontSize:"11px",color:"var(--muted)",marginLeft:"8px"}},[`(${fmtDs(g.date)})`]):"",]),
+            span({style:{fontSize:"11px",color:"var(--muted)"}},[fmtDs(g.createdAt)]),
+          ]),
+          ...["physical","technical","mental"].map(k=>{
+            const v=g[k]; if(!v?.goal) return "";
+            return div({style:{marginBottom:"8px",paddingBottom:"8px",borderBottom:"1px solid var(--border)"}},[
+              div({style:{fontSize:"12px",fontWeight:700,color:"var(--muted)",marginBottom:"3px"}},[CLABELS[k]]),
+              div({style:{fontSize:"13px",marginBottom:"4px"}},[v.goal]),
+              v.score?div({style:{display:"flex",gap:"2px"}},[...stars(v.score)]):"",
+            ]);
+          }).filter(Boolean),
+        ]));
+      });
+    }
+
+    if(!matchGoals.length&&!annualGoals.length){
+      gContent.append(emptyState("📊","まだ目標が記録されていません。目標を設定してみましょう！"));
+    }
+  };
+
+  switchGTab("match");
 }
 
 function generateGasCode(){
