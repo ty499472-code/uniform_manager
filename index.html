@@ -4507,34 +4507,127 @@ async function renderSGoal(root, student){
     const latest=getLatest("annual_goal");
     const savedEl=div({className:"hidden",style:{color:"var(--green)",fontSize:"12px"}},["✓ 保存しました"]);
     const showSaved=()=>{ savedEl.className=""; setTimeout(()=>savedEl.className="hidden",2000); };
-    const AREAS=[
-      {key:"technical", label:"🏸 技術面",  placeholder:"例：シングルスでレギュラーになる"},
-      {key:"humanity",  label:"🤝 人間性",   placeholder:"例：後輩の手本となる行動をする"},
-      {key:"lifestyle", label:"🌅 生活面",   placeholder:"例：毎朝6時に起きて自主練する"},
-      {key:"mental",    label:"🧠 精神面",   placeholder:"例：どんな場面でも平常心を保つ"},
+
+    const DEF_CATS=[
+      {key:"technical", label:"🏸 技術面"},
+      {key:"humanity",  label:"🤝 人間性"},
+      {key:"lifestyle", label:"🌅 生活面"},
+      {key:"mental",    label:"🧠 精神面"},
     ];
-    const vals={};
-    AREAS.forEach(a=>{ vals[a.key]=latest?.[a.key]||""; });
+
+    // cats: [{key, label, items:[{id,text}], score}]
+    let cats=latest?.cats
+      ? latest.cats.map(c=>({...c,items:c.items.map(i=>({...i}))}))
+      : DEF_CATS.map(c=>({
+          key:c.key, label:c.label,
+          items: latest?.[c.key]?[{id:genId(),text:latest[c.key]}]:[{id:genId(),text:""}],
+          score:0,
+        }));
+
     let year=latest?.year||new Date().getFullYear();
-    const yearI=inp({className:"inp",type:"number",value:year,style:{maxWidth:"120px"}}); yearI.addEventListener("input",e=>year=Number(e.target.value));
-    const areaEls=AREAS.map(a=>{
-      const tI=ta({className:"inp",rows:3},vals[a.key]); tI.placeholder=a.placeholder; tI.addEventListener("input",e=>vals[a.key]=e.target.value);
-      return div({className:"card",style:{marginBottom:"12px"}},[
-        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"10px"}},[a.label]),tI,
-      ]);
-    });
+    const yearI=inp({className:"inp",type:"number",value:year,style:{maxWidth:"120px"}});
+    yearI.addEventListener("input",e=>year=Number(e.target.value));
+
+    const catsWrap=div({style:{display:"flex",flexDirection:"column",gap:"12px"}});
+
+    const makeStarRow=(cat)=>{
+      const row=div({style:{display:"flex",gap:"5px",marginTop:"8px"}});
+      const stars=[];
+      for(let i=1;i<=5;i++){
+        const on=i<=(cat.score||0);
+        const s=btn({className:"sc",style:{flex:1,justifyContent:"center",fontSize:"16px",padding:"4px 0",
+          color:on?"var(--accent)":"var(--navy-light)",borderColor:on?"var(--accent)":"var(--border)"}},[" ★"]);
+        s.addEventListener("click",()=>{
+          cat.score=i;
+          stars.forEach((x,j)=>{
+            x.style.color=j+1<=i?"var(--accent)":"var(--navy-light)";
+            x.style.borderColor=j+1<=i?"var(--accent)":"var(--border)";
+          });
+        });
+        stars.push(s); row.append(s);
+      }
+      return row;
+    };
+
+    const rebuildCats=()=>{
+      catsWrap.innerHTML="";
+      cats.forEach((cat,ci)=>{
+        const itemsWrap=div({style:{display:"flex",flexDirection:"column",gap:"6px"}});
+        const rebuildItems=()=>{
+          itemsWrap.innerHTML="";
+          cat.items.forEach((item,ii)=>{
+            const row=div({style:{display:"flex",gap:"6px",alignItems:"center"}});
+            const tI=inp({className:"inp",value:item.text||"",placeholder:"目標を入力..."});
+            tI.addEventListener("input",e=>item.text=e.target.value);
+            row.append(
+              tI,
+              cat.items.length>1?btn({className:"btn btn-d sm",style:{padding:"4px 8px",flexShrink:0},onClick:()=>{
+                cat.items.splice(ii,1); rebuildItems();
+              }},["×"]):"",
+            );
+            itemsWrap.append(row);
+          });
+          itemsWrap.append(btn({className:"btn btn-g sm",style:{alignSelf:"flex-start",marginTop:"4px"},onClick:()=>{
+            cat.items.push({id:genId(),text:""}); rebuildItems();
+          }},["＋ 項目を追加"]));
+        };
+        rebuildItems();
+        const card=div({className:"card",style:{marginBottom:"0"}});
+        card.append(
+          div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}},[
+            div({style:{fontWeight:700,fontSize:"14px"}},[cat.label]),
+            ci>=4?btn({className:"btn btn-d sm",style:{padding:"2px 8px",fontSize:"10px"},onClick:()=>{
+              cats.splice(ci,1); rebuildCats();
+            }},["分類を削除"]):"",
+          ]),
+          itemsWrap,
+          div({style:{marginTop:"10px"}},[
+            div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"5px"}},["達成度評価（5段階）"]),
+            makeStarRow(cat),
+          ]),
+        );
+        catsWrap.append(card);
+      });
+    };
+    rebuildCats();
+
+    // 新しい分類を追加
+    const newCatI=inp({className:"inp",placeholder:"新しい分類名（例：体力面）",style:{flex:1}});
+    const addCatRow=div({style:{display:"flex",gap:"8px",marginTop:"8px"}});
+    addCatRow.append(newCatI, btn({className:"btn btn-g",onClick:()=>{
+      const label=newCatI.value.trim(); if(!label) return;
+      cats.push({key:`custom_${genId()}`,label,items:[{id:genId(),text:""}],score:0});
+      newCatI.value=""; rebuildCats();
+    }},["＋ 分類を追加"]));
+
     gContent.append(
-      div({style:{fontSize:"16px",fontWeight:700,marginBottom:"16px"}},["🏆 年間目標"]),
-      ff("対象年度",yearI),
-      div({style:{height:"1px",background:"var(--border)",margin:"12px 0"}}),
-      ...areaEls,
+      div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}},[
+        div({style:{fontSize:"16px",fontWeight:700}},["🏆 年間目標"]),
+        ff("年度",yearI),
+      ]),
+      catsWrap,
+      div({style:{marginTop:"12px",padding:"12px",background:"var(--navy)",borderRadius:"8px",border:"1px solid var(--border)"}},[
+        div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"6px"}},["＋ 新しい分類を追加"]),
+        addCatRow,
+      ]),
+      div({style:{height:"1px",background:"var(--border)",margin:"16px 0"}}),
       div({style:{display:"flex",gap:"8px",alignItems:"center"}},[
         btn({className:"btn btn-p",onClick:async()=>{
-          const goal={id:genId(),type:"annual_goal",year,
-            ...Object.fromEntries(AREAS.map(a=>[a.key,vals[a.key]])),
-            createdAt:new Date().toISOString()};
+          const existing=goals.find(g=>g.type==="annual_goal"&&g.year===year);
+          const goal={
+            id:existing?.id||latest?.id||genId(),
+            type:"annual_goal", year,
+            cats:cats.map(c=>({key:c.key,label:c.label,items:c.items.map(i=>({id:i.id,text:i.text||""})),score:c.score||0})),
+            technical:cats.find(c=>c.key==="technical")?.items.map(i=>i.text).filter(Boolean).join("、")||"",
+            humanity: cats.find(c=>c.key==="humanity")?.items.map(i=>i.text).filter(Boolean).join("、")||"",
+            lifestyle:cats.find(c=>c.key==="lifestyle")?.items.map(i=>i.text).filter(Boolean).join("、")||"",
+            mental:   cats.find(c=>c.key==="mental")?.items.map(i=>i.text).filter(Boolean).join("、")||"",
+            createdAt:existing?.createdAt||latest?.createdAt||new Date().toISOString(),
+            updatedAt:new Date().toISOString(),
+          };
           await DB.saveGoal(student.id,goal);
-          goals.unshift(goal);
+          const idx=goals.findIndex(g=>g.id===goal.id);
+          if(idx>=0) goals[idx]=goal; else goals.unshift(goal);
           showSaved();
         }},["💾 保存する"]),
         savedEl,
