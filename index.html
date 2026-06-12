@@ -1744,13 +1744,20 @@ async function openTeacherGoalView(student){
     const AREAS=[["technical","🏸 技術面"],["humanity","🤝 人間性"],["lifestyle","🌅 生活面"],["mental","🧠 精神面"]];
     body.append(div({style:{fontWeight:700,fontSize:"15px",marginBottom:"10px",color:"var(--accent)"}},[`🏆 年間目標（${annual.year||""}年度）`]));
     const card=div({className:"card",style:{marginBottom:"12px"}});
-    AREAS.forEach(([k,l])=>{
-      if(!annual[k]) return;
+    const annualCats=annual.cats||AREAS.map(([k,l])=>({key:k,label:l,items:annual[k]?[{text:annual[k]}]:[],score:0}));
+    annualCats.forEach(cat=>{
+      if(!cat.items?.some(i=>i.text)) return;
       const section=div({style:{marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid var(--border)"}});
       section.append(
-        div({style:{fontSize:"12px",fontWeight:700,color:"var(--muted)",marginBottom:"3px"}},[l]),
-        div({style:{fontSize:"13px",lineHeight:1.6}},[annual[k]]),
-        makeCommentWidget(`annual_${annual.id}_${k}`),
+        div({style:{fontSize:"12px",fontWeight:700,color:"var(--muted)",marginBottom:"6px",display:"flex",alignItems:"center",gap:"6px"}},[
+          cat.label,
+          cat.score?div({style:{display:"flex",gap:"2px"}},[...stars(cat.score)]):"",
+        ]),
+        ...cat.items.filter(i=>i.text).map(i=>div({style:{marginBottom:"6px",paddingLeft:"8px"}},[
+          div({style:{fontSize:"13px",lineHeight:1.5}},[`• ${i.text}`]),
+          i.action?div({style:{fontSize:"12px",color:"var(--accent)",paddingLeft:"12px",marginTop:"2px"}},[`→ ${i.action}`]):"",
+        ])),
+        makeCommentWidget(`annual_${annual.id}_${cat.key}`),
       );
       card.append(section);
     });
@@ -4556,19 +4563,30 @@ async function renderSGoal(root, student){
         const rebuildItems=()=>{
           itemsWrap.innerHTML="";
           cat.items.forEach((item,ii)=>{
-            const row=div({style:{display:"flex",gap:"6px",alignItems:"center"}});
+            const row=div({style:{display:"flex",flexDirection:"column",gap:"6px",padding:"10px",background:"var(--navy)",borderRadius:"8px",border:"1px solid var(--border)"}});
+            // 目標 + 削除ボタン
+            const topRow=div({style:{display:"flex",gap:"6px",alignItems:"center"}});
             const tI=inp({className:"inp",value:item.text||"",placeholder:"目標を入力..."});
             tI.addEventListener("input",e=>item.text=e.target.value);
-            row.append(
+            topRow.append(
               tI,
               cat.items.length>1?btn({className:"btn btn-d sm",style:{padding:"4px 8px",flexShrink:0},onClick:()=>{
                 cat.items.splice(ii,1); rebuildItems();
               }},["×"]):"",
             );
+            // そのためにやること
+            const actionI=inp({className:"inp",value:item.action||"",placeholder:"そのためにやること..."});
+            actionI.style.fontSize="12px";
+            actionI.addEventListener("input",e=>item.action=e.target.value);
+            const actionRow=div({style:{display:"flex",alignItems:"center",gap:"6px"}},[
+              span({style:{fontSize:"11px",color:"var(--accent)",whiteSpace:"nowrap",fontWeight:600}},["→"]),
+              actionI,
+            ]);
+            row.append(topRow, actionRow);
             itemsWrap.append(row);
           });
           itemsWrap.append(btn({className:"btn btn-g sm",style:{alignSelf:"flex-start",marginTop:"4px"},onClick:()=>{
-            cat.items.push({id:genId(),text:""}); rebuildItems();
+            cat.items.push({id:genId(),text:"",action:""}); rebuildItems();
           }},["＋ 項目を追加"]));
         };
         rebuildItems();
@@ -4703,15 +4721,23 @@ async function renderSGoal(root, student){
     if(annualGoals.length){
       gContent.append(div({style:{fontWeight:600,fontSize:"14px",marginBottom:"10px",color:"var(--accent)"}},[`🏆 年間目標（${annualGoals.length}件）`]));
       annualGoals.forEach(g=>{
-        const areas=[["🏸 技術面",g.technical],["🤝 人間性",g.humanity],["🌅 生活面",g.lifestyle],["🧠 精神面",g.mental]].filter(([,v])=>v);
+        const areas=g.cats
+          ?g.cats.filter(c=>c.items?.some(i=>i.text))
+          :[["🏸 技術面",g.technical],["🤝 人間性",g.humanity],["🌅 生活面",g.lifestyle],["🧠 精神面",g.mental]].filter(([,v])=>v).map(([l,v])=>({label:l,items:[{text:v}],score:0}));
         gContent.append(div({className:"card",style:{marginBottom:"10px"}},[
           div({style:{display:"flex",justifyContent:"space-between",marginBottom:"10px"}},[
             div({style:{fontWeight:700}},[`${g.year||""}年度`]),
-            span({style:{fontSize:"11px",color:"var(--muted)"}},[fmtDs(g.createdAt)]),
+            span({style:{fontSize:"11px",color:"var(--muted)"}},[fmtDs(g.updatedAt||g.createdAt)]),
           ]),
-          ...areas.map(([l,v])=>div({style:{marginBottom:"5px"}},[
-            span({style:{fontSize:"11px",fontWeight:700,color:"var(--muted)"}},[l+" "]),
-            span({style:{fontSize:"13px"}},[v]),
+          ...areas.map(cat=>div({style:{marginBottom:"8px"}},[
+            div({style:{fontSize:"12px",fontWeight:700,color:"var(--muted)",marginBottom:"4px",display:"flex",alignItems:"center",gap:"6px"}},[
+              cat.label,
+              cat.score?div({style:{display:"flex",gap:"2px"}},[...stars(cat.score)]):"",
+            ]),
+            ...(cat.items||[]).filter(i=>i.text).map(i=>div({style:{marginBottom:"4px",paddingLeft:"8px"}},[
+              div({style:{fontSize:"13px"}},[`• ${i.text}`]),
+              i.action?div({style:{fontSize:"12px",color:"var(--accent)",paddingLeft:"12px",marginTop:"2px"}},[`→ ${i.action}`]):"",
+            ])),
           ])),
         ]));
       });
