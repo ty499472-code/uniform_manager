@@ -2818,18 +2818,17 @@ async function renderStudent(){
     boxShadow:"0 2px 12px rgba(27,79,138,.2)",position:"relative",
   }});
   const goldLine2=div({style:{position:"absolute",bottom:0,left:0,right:0,height:"3px",background:"linear-gradient(90deg,transparent,#C49A22 30%,#E8C84A 50%,#C49A22 70%,transparent)"}});
-  hdr.append(
-    goldLine2,
-    div({style:{fontWeight:900,fontSize:"15px",letterSpacing:"1px",color:"#fff"}},[clubName2]),
-    div({style:{width:"1px",height:"20px",background:"rgba(255,255,255,.3)"}}),
-    span({style:{fontSize:"11px",color:"rgba(196,154,34,.9)",fontWeight:700,letterSpacing:"1px"}},["PLAYER"]),
-    div({style:{marginLeft:"auto",display:"flex",alignItems:"center",gap:"10px"}}),[
-      div({style:{textAlign:"right"}},[
-        div({style:{fontSize:"13px",fontWeight:700,color:"#fff"}},[student.name]),
-        div({style:{fontSize:"11px",color:"rgba(255,255,255,.6)"}},[`${student.grade}年${student.cls}組 No.${student.number}`]),
-      ]),
-      btn({className:"btn",style:{background:"rgba(255,255,255,.15)",color:"#fff",border:"1px solid rgba(255,255,255,.3)",fontSize:"12px",padding:"5px 12px"},onClick:()=>render(renderLogin)},["ログアウト"]),
-  );
+  hdr.append(goldLine2);
+  hdr.append(div({style:{fontWeight:900,fontSize:"15px",letterSpacing:"1px",color:"#fff"}},[clubName2]));
+  hdr.append(div({style:{width:"1px",height:"20px",background:"rgba(255,255,255,.3)"}}));
+  hdr.append(span({style:{fontSize:"11px",color:"rgba(196,154,34,.9)",fontWeight:700,letterSpacing:"1px"}},["PLAYER"]));
+  hdr.append(div({style:{marginLeft:"auto",display:"flex",alignItems:"center",gap:"10px"}},[
+    div({style:{textAlign:"right"}},[
+      div({style:{fontSize:"13px",fontWeight:700,color:"#fff"}},[student.name]),
+      div({style:{fontSize:"11px",color:"rgba(255,255,255,.6)"}},[`${student.grade}年${student.cls}組 No.${student.number}`]),
+    ]),
+    btn({className:"btn",style:{background:"rgba(255,255,255,.15)",color:"#fff",border:"1px solid rgba(255,255,255,.3)",fontSize:"12px",padding:"5px 12px"},onClick:()=>render(renderLogin)},["ログアウト"]),
+  ]));
   const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"24px"}});
   const STABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"],["goal","🎯 目標設定"]];
   let sCurTab="uniform";
