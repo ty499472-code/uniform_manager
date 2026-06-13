@@ -735,8 +735,8 @@ function renderTeacher(){
     ]),
   );
   const content=div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
-  const TABS=[["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["manage","🗂 管理"],["settings","⚙️ 設定"]];
-  let curTab="items";
+  const TABS=[["schedule","📅 スケジュール"],["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["manage","🗂 管理"],["settings","⚙️ 設定"]];
+  let curTab="schedule";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
   const tabContent=div({});
@@ -745,7 +745,9 @@ function renderTeacher(){
     clearAllCountdowns(); tabContent.innerHTML="";
     tabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"32px 0",textAlign:"center"}},[" 読み込み中..."]));
     try{
-      if(k==="items"){
+      if(k==="schedule"){
+        tabContent.innerHTML=""; renderSchedule(tabContent);
+      } else if(k==="items"){
         [S.items,S.resp,S.students]=await Promise.all([DB.getItems(),DB.getResps(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTItems(tabContent);
       } else if(k==="students"){
@@ -780,12 +782,68 @@ function renderTeacher(){
     }
   };
   TABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===curTab?"on":""}`,onClick:()=>switchTab(k)},[l]); tabBtns[k]=b; tabBar.append(b); });
-  switchTab("items");
+  switchTab("schedule");
   content.append(tabBar,tabContent);
   app.append(hdr,content);
 }
 
 // ── Teacher: Items ──────────────────────────────────────────────────────────────
+// ── スケジュール表示 ─────────────────────────────────────────────────────────────
+const SCHEDULE_PDF="https://docs.google.com/spreadsheets/d/e/2PACX-1vSU79WkVSBatzoeo0F_sY2z_kvSnetSO3rTAlXbzS0fuoUlMrPMcqe3zDJRPY99NTA_599RvLyA0nDF/pub?gid=2108880916&single=true&output=pdf";
+const SCHEDULE_SITE="https://sites.google.com/stu.seikyo.ed.jp/seikyobad/%E3%82%B9%E3%82%B1%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB";
+
+function renderSchedule(root){
+  root.innerHTML="";
+
+  // ヘッダー
+  root.append(div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"10px"}},[
+    div({},[
+      div({style:{fontSize:"20px",fontWeight:700}},["📅 スケジュール"]),
+      div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},["予定は急に変更することがあります。ご了承ください。"]),
+    ]),
+    div({style:{display:"flex",gap:"8px",flexWrap:"wrap"}},[
+      btn({className:"btn btn-g",onClick:()=>window.open(SCHEDULE_PDF,"_blank")},["🖨 PDFで開く"]),
+      btn({className:"btn btn-g",onClick:()=>window.open(SCHEDULE_SITE,"_blank")},["🌐 サイトで開く"]),
+    ]),
+  ]));
+
+  // iframeでPDF埋め込み
+  const iframeWrap=div({style:{
+    width:"100%",borderRadius:"12px",overflow:"hidden",
+    border:"1.5px solid var(--border)",boxShadow:"var(--sh)",
+    background:"var(--navy-light)",
+  }});
+
+  // PDF表示（Googleドライブのビューア経由で表示）
+  const pdfViewer=`https://docs.google.com/viewer?url=${encodeURIComponent(SCHEDULE_PDF)}&embedded=true`;
+  const frame=el("iframe",{
+    src:pdfViewer,
+    style:{width:"100%",height:"75vh",border:"none",display:"block"},
+    allow:"fullscreen",
+  });
+
+  // ローディング表示
+  const loadingEl=div({style:{padding:"48px",textAlign:"center",color:"var(--muted)",fontSize:"13px"}});
+  loadingEl.innerHTML=`<div style="margin-bottom:12px">📅 スケジュールを読み込み中...</div><div class="sp" style="margin:0 auto;border-top-color:var(--accent2)"></div>`;
+
+  frame.addEventListener("load",()=>{ loadingEl.style.display="none"; });
+  // 読み込み失敗時のフォールバック
+  setTimeout(()=>{
+    if(loadingEl.style.display!=="none"){
+      loadingEl.innerHTML=`
+        <div style="font-size:16px;margin-bottom:8px">📅</div>
+        <div style="font-weight:600;margin-bottom:6px">スケジュールを読み込めませんでした</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">ネットワーク環境をご確認ください</div>
+      `;
+      const pdfBtn=btn({className:"btn btn-p",style:{justifyContent:"center"},onClick:()=>window.open(SCHEDULE_PDF,"_blank")},["📄 PDFで確認する"]);
+      loadingEl.append(pdfBtn);
+    }
+  },8000);
+
+  iframeWrap.append(loadingEl,frame);
+  root.append(iframeWrap);
+}
+
 function renderTItems(root){
   root.innerHTML="";
   const list=div({style:{display:"flex",flexDirection:"column",gap:"12px"}});
@@ -2830,8 +2888,8 @@ async function renderStudent(){
     btn({className:"btn",style:{background:"rgba(255,255,255,.15)",color:"#fff",border:"1px solid rgba(255,255,255,.3)",fontSize:"12px",padding:"5px 12px"},onClick:()=>render(renderLogin)},["ログアウト"]),
   ]));
   const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"24px"}});
-  const STABS=[["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"],["goal","🎯 目標設定"]];
-  let sCurTab="uniform";
+  const STABS=[["schedule","📅 スケジュール"],["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"],["goal","🎯 目標設定"]];
+  let sCurTab="schedule";
   const sTabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const sTabBtns={};
   const sTabContent=div({});
@@ -2840,7 +2898,9 @@ async function renderStudent(){
     sTabContent.innerHTML="";
     sTabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},[" 読み込み中..."]));
     try{
-      if(k==="uniform"){
+      if(k==="schedule"){
+        sTabContent.innerHTML=""; renderSchedule(sTabContent);
+      } else if(k==="uniform"){
         [S.items,S.resp]=await Promise.all([DB.getItems(),DB.getResps()]);
         sTabContent.innerHTML=""; renderSUniform(sTabContent,student);
       } else if(k==="matches"){
@@ -2887,7 +2947,7 @@ async function renderStudent(){
   STABS.forEach(([k,l])=>{ const b=btn({className:`tab ${k===sCurTab?"on":""}`,onClick:()=>switchSTab(k)},[l]); sTabBtns[k]=b; sTabBar.append(b); });
   content.append(sTabBar,sTabContent);
   app.append(hdr,content);
-  switchSTab("uniform");
+  switchSTab("schedule");
   // バッジ更新は画面表示後に非同期で実行（タブ表示を妨げない）
   setTimeout(()=>updateChatBadge(sTabBtns["chat"],student.id),2000);
 }
