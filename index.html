@@ -113,6 +113,14 @@ tr:hover td{background:var(--card-h)}
 .step-num-pending{background:rgba(255,255,255,.15);color:rgba(255,255,255,.5)}
 .step-label-active{color:var(--accent-bright);font-weight:700}
 .step-label-other{color:rgba(255,255,255,.5)}
+/* ── ログインカード内（青背景）のラベル・セレクト ── */
+.login-card .ff-label{color:rgba(255,255,255,.8)}
+.login-card select.inp{background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.25)}
+.login-card select.inp option{background:#1B4F8A;color:#fff}
+.login-card .inp{background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.25)}
+.login-card .inp::placeholder{color:rgba(255,255,255,.5)}
+.login-card .btn-g{background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.3)}
+.login-card .btn-g:hover{background:rgba(255,255,255,.3)}
 @media(max-width:640px){
   .grid2,.grid3{grid-template-columns:1fr!important}
   .tabs .tab{font-size:11px;padding:6px 8px}
@@ -484,22 +492,22 @@ function renderStudentRouter(){
 // Step 3B: 登録済 → パスワード入力（通常ログイン）
 function renderStudentUnified(wrap){
   wrap.innerHTML="";
-  const card=div({style:{maxWidth:"420px",width:"100%",background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--r)",overflow:"hidden"}});
+  const card=div({style:{maxWidth:"420px",width:"100%",background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:"16px",overflow:"hidden",backdropFilter:"blur(8px)"}});
+  card.className="login-card";
   wrap.append(card);
 
   let step=1, found=null, pw="", pw2="";
 
-  const hdr=div({style:{padding:"16px 24px",background:"var(--navy)",borderBottom:"1px solid var(--border)"}});
+  const hdr=div({style:{padding:"16px 24px",background:"rgba(255,255,255,.08)",borderBottom:"1px solid rgba(255,255,255,.15)"}});
   const body=div({style:{padding:"24px"}});
-  const ftr=div({style:{padding:"14px 24px",borderTop:"1px solid var(--border)",display:"flex",gap:"8px"}});
+  const ftr=div({style:{padding:"14px 24px",borderTop:"1px solid rgba(255,255,255,.15)",display:"flex",gap:"8px"}});
   card.append(hdr,body,ftr);
 
   const rebuildHdr=()=>{
     hdr.innerHTML="";
-    // 登録済みは2ステップ、未登録は3ステップ
     const steps=found?.registered?["選手選択","パスワード"]:["選手選択","生年月日確認","PW設定"];
     hdr.append(
-      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px"}},["👕 選手ログイン"]),
+      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"12px",color:"#fff"}},["🏸 選手ログイン"]),
       stepBar(steps,step),
     );
   };
@@ -538,29 +546,28 @@ function renderStudentUnified(wrap){
 
       byGrade.forEach(s=>{
         const b=div({style:{
-          padding:"10px 14px",borderRadius:"8px",border:"1.5px solid var(--border)",
+          padding:"10px 14px",borderRadius:"8px",border:"1.5px solid rgba(255,255,255,.25)",
           cursor:"pointer",transition:"all .15s",display:"flex",justifyContent:"space-between",alignItems:"center",
+          background:"rgba(255,255,255,.12)",
         }},[
           div({},[
-            div({style:{fontWeight:700,fontSize:"14px"}},[s.name]),
-            div({style:{fontSize:"11px",color:"var(--muted)"}},[`${s.grade}年${s.cls}組 No.${s.number}`]),
+            div({style:{fontWeight:700,fontSize:"14px",color:"#fff"}},[s.name]),
+            div({style:{fontSize:"11px",color:"rgba(255,255,255,.7)"}},[`${s.grade}年${s.cls}組 No.${s.number}`]),
           ]),
-          span({style:{color:"var(--accent)",fontSize:"18px"}},["›"]),
+          span({style:{color:"#E8C84A",fontSize:"18px"}},["›"]),
         ]);
-        b.addEventListener("mouseenter",()=>{ if(selectedStudent!==s){ b.style.borderColor="var(--accent)"; b.style.background="rgba(244,162,40,.06)"; } });
-        b.addEventListener("mouseleave",()=>{ if(selectedStudent!==s){ b.style.borderColor=""; b.style.background=""; } });
+        b.addEventListener("mouseenter",()=>{ if(selectedStudent!==s){ b.style.borderColor="rgba(232,200,74,.5)"; b.style.background="rgba(255,255,255,.2)"; } });
+        b.addEventListener("mouseleave",()=>{ if(selectedStudent!==s){ b.style.borderColor="rgba(255,255,255,.25)"; b.style.background="rgba(255,255,255,.12)"; } });
         b.addEventListener("click",()=>{
           selectedStudent=s;
           errEl.className="hidden";
-          // 選択した1人だけ表示
           Array.from(nameList.children).forEach(x=>{ x.style.display="none"; });
-          b.style.display="flex"; b.style.borderColor="var(--accent)"; b.style.background="rgba(244,162,40,.12)";
-          // 「変更」リンク
+          b.style.display="flex"; b.style.borderColor="#E8C84A"; b.style.background="rgba(232,200,74,.2)";
           if(!nameList.querySelector(".chg")){ 
-            const chg=div({className:"chg",style:{fontSize:"12px",color:"var(--accent)",cursor:"pointer",textAlign:"right",marginTop:"4px",padding:"2px 0"}},["↩ 別の選手を選ぶ"]);
+            const chg=div({className:"chg",style:{fontSize:"12px",color:"#E8C84A",cursor:"pointer",textAlign:"right",marginTop:"4px",padding:"2px 0"}},["↩ 別の選手を選ぶ"]);
             chg.addEventListener("click",()=>{
               selectedStudent=null;
-              Array.from(nameList.children).forEach(x=>{ x.style.display="flex"; x.style.borderColor=""; x.style.background=""; });
+              Array.from(nameList.children).forEach(x=>{ x.style.display="flex"; x.style.borderColor="rgba(255,255,255,.25)"; x.style.background="rgba(255,255,255,.12)"; });
               chg.remove(); buildNextBtn();
             });
             nameList.append(chg);
