@@ -248,6 +248,19 @@ const DB = {
   async getGoalComments(studentId){
     try{ const s=await withTimeout(getDocs(collection(db,`goal_comments_${studentId}`))); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||"")); }catch{ return []; }
   },
+  // 目標更新通知
+  async notifyGoalUpdated(studentId){
+    await setDoc(doc(db,"goal_notify",studentId),{updatedAt:new Date().toISOString(),studentId});
+  },
+  async getGoalNotify(studentId){
+    try{ const d=await withTimeout(getDoc(doc(db,"goal_notify",studentId))); return d.exists()?d.data():null; }catch{ return null; }
+  },
+  async markGoalRead(studentId){
+    await setDoc(doc(db,"goal_read",studentId),{readAt:new Date().toISOString()});
+  },
+  async getGoalReadMap(){
+    try{ const s=await withTimeout(getDocs(collection(db,"goal_read"))); const r={}; s.docs.forEach(d=>r[d.id]=d.data().readAt); return r; }catch{ return {}; }
+  },
 };
 
 // ─── Utils ─────────────────────────────────────────────────────────────────────
@@ -768,6 +781,15 @@ function renderTeacher(){
         tabContent.innerHTML=""; renderTItems(tabContent);
       } else if(k==="students"){
         [S.students,S.items,S.resp]=await Promise.all([DB.getStudents(),DB.getItems(),DB.getResps()]);
+        // 目標更新通知データも取得
+        try{
+          const [notifySnap,readSnap]=await Promise.all([
+            withTimeout(getDocs(collection(db,"goal_notify"))),
+            withTimeout(getDocs(collection(db,"goal_read"))),
+          ]);
+          S.goalNotify={}; notifySnap.docs.forEach(d=>S.goalNotify[d.id]=d.data().updatedAt);
+          S.goalRead={};  readSnap.docs.forEach(d=>S.goalRead[d.id]=d.data().readAt);
+        }catch{ S.goalNotify={}; S.goalRead={}; }
         tabContent.innerHTML=""; renderTStudents(tabContent);
       } else if(k==="overview"){
         [S.items,S.resp,S.students]=await Promise.all([DB.getItems(),DB.getResps(),DB.getStudents()]);
@@ -1757,8 +1779,28 @@ function renderTStudents(root){
             el("td",{},[s.registered?badge("b-g","✓ 済"):badge("b-y","未")]),
             el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
             el("td",{style:{display:"flex",gap:"5px",flexWrap:"wrap",padding:"8px 14px"}},[
-              btn({className:"btn btn-g sm",style:{background:"rgba(46,204,113,.12)",color:"var(--green)",border:"1px solid rgba(46,204,113,.3)"},onClick:()=>openStudentPreview(s)},["👁"]),
-              btn({className:"btn btn-g sm",style:{background:"rgba(74,158,255,.12)",color:"var(--blue)",border:"1px solid rgba(74,158,255,.3)"},onClick:()=>openTeacherGoalView(s)},["🎯"]),
+              (()=>{
+                // NEWバッジ判定
+                const notify=S.goalNotify?.[s.id];
+                const read=S.goalRead?.[s.id];
+                const isNew=notify&&(!read||notify>read);
+                const goalBtn=btn({className:"btn btn-g sm",style:{background:"rgba(46,204,113,.12)",color:"var(--green)",border:"1px solid rgba(46,204,113,.3)",position:"relative"},onClick:()=>openStudentPreview(s)},["👁"]);
+                const goalViewBtn=div({style:{position:"relative",display:"inline-flex",alignItems:"center",gap:"4px"}});
+                const gBtn=btn({className:"btn btn-g sm",style:{background:"rgba(74,158,255,.12)",color:"var(--blue)",border:"1px solid rgba(74,158,255,.3)"},onClick:async()=>{
+                  await DB.markGoalRead(s.id);
+                  if(S.goalRead) S.goalRead[s.id]=new Date().toISOString();
+                  newBadge.style.display="none";
+                  openTeacherGoalView(s);
+                }},["🎯"]);
+                const newBadge=div({style:{
+                  display:isNew?"flex":"none",
+                  background:"#E8352A",color:"#fff",fontSize:"9px",fontWeight:900,
+                  padding:"1px 5px",borderRadius:"20px",lineHeight:1.4,
+                  pointerEvents:"none",whiteSpace:"nowrap",
+                }},["NEW"]);
+                goalViewBtn.append(gBtn,newBadge);
+                return div({style:{display:"flex",gap:"5px",alignItems:"center"}},[goalBtn,goalViewBtn]);
+              })(),
               s.registered
                 ? btn({className:"btn btn-b sm",onClick:()=>openPwModal(s,rebuild)},["🔑 PW"])
                 : span({style:{fontSize:"11px",color:"var(--muted)",lineHeight:"28px"}},["未登録"]),
@@ -4582,6 +4624,7 @@ async function renderSGoal(root, student){
         updatedAt:new Date().toISOString(),
       };
       await DB.saveGoal(student.id,goal);
+      DB.notifyGoalUpdated(student.id).catch(()=>{});
       const idx=goals.findIndex(g=>g.id===goal.id);
       if(idx>=0) goals[idx]=goal; else goals.unshift(goal);
       if(thenNew){
@@ -4793,6 +4836,7 @@ async function renderSGoal(root, student){
             updatedAt:new Date().toISOString(),
           };
           await DB.saveGoal(student.id,goal);
+          DB.notifyGoalUpdated(student.id).catch(()=>{});
           const idx=goals.findIndex(g=>g.id===goal.id);
           if(idx>=0) goals[idx]=goal; else goals.unshift(goal);
           showSaved();
@@ -4847,6 +4891,7 @@ async function renderSGoal(root, student){
             if(!text) return;
             const goal={id:genId(),type:"memo",date:dateI.value,text,createdAt:new Date().toISOString()};
             await DB.saveGoal(student.id,goal);
+            DB.notifyGoalUpdated(student.id).catch(()=>{});
             memos.unshift(goal);
             memoI.value="";
             buildList(); showSaved();
