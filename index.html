@@ -125,6 +125,38 @@ tr:hover td{background:var(--card-h)}
   .grid2,.grid3{grid-template-columns:1fr!important}
   .tabs .tab{font-size:11px;padding:6px 8px}
 }
+/* ── スマホ縦画面専用 ── */
+@media(max-width:480px){
+  /* 入力欄：タップしやすい高さ */
+  .inp{padding:12px 14px;font-size:15px!important;border-radius:10px}
+  textarea.inp{font-size:15px!important}
+  select.inp{padding:12px 14px;font-size:15px!important}
+  /* ボタン：タップしやすい最小高さ44px */
+  .btn{padding:11px 16px;font-size:14px;min-height:44px;border-radius:10px}
+  .btn.sm,.sm{padding:10px 14px!important;font-size:13px!important;min-height:40px!important}
+  /* カード */
+  .card{padding:16px;border-radius:10px}
+  /* モーダル */
+  .mb{border-radius:16px 16px 0 0;max-height:92vh;position:fixed;bottom:0;left:0;right:0;max-width:100%!important;width:100%!important}
+  .ov{align-items:flex-end;padding:0}
+  /* タブ */
+  .tab{padding:9px 10px;font-size:11px}
+  /* テーブル：小さいフォント */
+  table{font-size:12px}
+  th,td{padding:9px 10px}
+  /* グリッド */
+  .grid2,.grid3{grid-template-columns:1fr!important;gap:8px}
+  /* ff-label */
+  .ff-label{font-size:13px;margin-bottom:8px}
+  /* ページ余白 */
+  body>div>div[style*="padding:24px"]{padding:16px!important}
+  /* ヘッダー */
+  .app-header,div[style*="height:54px"]{height:50px}
+  /* ログインカード */
+  .login-card{border-radius:14px!important}
+  /* スコア入力（★ボタン）*/
+  .sc{padding:10px 12px;font-size:14px;min-height:40px}
+}
 </style>
 </head>
 <body>
@@ -763,7 +795,7 @@ function renderTeacher(){
       btn({className:"btn",style:{background:"rgba(255,255,255,.15)",color:"#fff",border:"1px solid rgba(255,255,255,.3)",fontSize:"12px",padding:"5px 12px"},onClick:()=>render(renderLogin)},["ログアウト"]),
     ]),
   );
-  const content=div({style:{padding:"24px",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
+  const content=div({style:{padding:"clamp(12px,4vw,24px)",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
   const TABS=[["schedule","📅 スケジュール"],["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["manage","🗂 管理"],["settings","⚙️ 設定"]];
   let curTab="schedule";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
@@ -955,7 +987,7 @@ function openOrderPdfModal(){
 
   box.append(
     mhdr("🖨️ 発注リスト出力",()=>ov.remove()),
-    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+    div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}},[
       div({style:{fontSize:"13px",color:"var(--muted)"}},[`出力する配布物を選択してください（配布物ごとに1ページ）`]),
       itemList,
       errEl,
@@ -1248,7 +1280,7 @@ function openResponseCsvImport(onSave){
   const box=div({className:"mb",style:{maxWidth:"700px"}});
   box.append(
     mhdr("📂 回答CSVインポート",()=>ov.remove()),
-    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+    div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}},[
       div({style:{fontSize:"12px",color:"var(--muted)",padding:"12px",background:"var(--navy)",borderRadius:"8px",lineHeight:1.8}},[
         "Googleフォームの回答CSVをそのままアップロード可能。",el("br"),
         "列構成: タイムスタンプ / メール / 名前 / 携帯(生徒) / 携帯(保護者) / シューズ(スキップ) / 短パン / ゲームシャツ / T半袖 / T長袖",el("br"),
@@ -1410,7 +1442,7 @@ function openReceiptModal(){
 
   box.append(
     mhdr("🧾 領収書作成",()=>ov.remove()),
-    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+    div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}},[
       div({style:{fontWeight:700,fontSize:"13px"}},["📋 品目を選択（複数選択可）"]),
       itemCheckArea,
       ff("領収書タイトル（任意・全品目共通）",receiptTitleI),
@@ -1667,7 +1699,7 @@ function openItemModal(item,onSave){
 
   box.append(
     mhdr(isE?"項目を編集":"新規項目を追加",()=>ov.remove()),
-    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+    div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}},[
       ff("見本画像",div({},[uzDiv,delBtn])),
       ff("項目名 *",nameI),ff("説明",descI),ff("サイズ選択肢（カンマ区切り）*",sizI),ff("締切日時 *",dlI),
       ff("対象学年（複数選択可）",gradeRow),
@@ -1855,7 +1887,7 @@ async function openTeacherGoalView(student){
     ]),
     btn({className:"btn btn-g sm",onClick:()=>ov.remove()},["✕ 閉じる"]),
   ]));
-  const body=div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}});
+  const body=div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}});
   body.append(div({style:{color:"var(--muted)",fontSize:"13px",textAlign:"center"}},["読み込み中..."]));
   box.append(body);
   const ov=overlay(box,()=>ov.remove());
@@ -2181,7 +2213,7 @@ function openCsvImport(onSave){
   const box=div({className:"mb",style:{maxWidth:"700px"}});
   box.append(
     mhdr("📂 CSVインポート",()=>ov.remove()),
-    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+    div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}},[
       // フォーマット説明
       div({style:{fontSize:"12px",color:"var(--muted)",padding:"12px",background:"var(--navy)",borderRadius:"8px",lineHeight:1.8}},[
         "対応フォーマット（タブ or カンマ区切り）：",el("br"),
@@ -2252,7 +2284,7 @@ function openPwModal(student,onUpdate){
   const box=div({className:"mb",style:{maxWidth:"420px"}});
   box.append(
     mhdr("🔑 パスワードリセット",()=>ov.remove()),
-    div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}},[
+    div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}},[
       div({style:{padding:"14px",background:"rgba(74,158,255,.07)",borderRadius:"8px",border:"1px solid rgba(74,158,255,.2)"}},[
         div({style:{fontWeight:700,fontSize:"14px"}},[student.name]),
         div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},[`${student.grade}年${student.cls}組 No.${student.number}`]),
@@ -2945,7 +2977,7 @@ async function renderStudent(){
     ]),
     btn({className:"btn",style:{background:"rgba(255,255,255,.15)",color:"#fff",border:"1px solid rgba(255,255,255,.3)",fontSize:"12px",padding:"5px 12px"},onClick:()=>render(renderLogin)},["ログアウト"]),
   ]));
-  const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"24px"}});
+  const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"clamp(12px,4vw,24px)"}});
   const STABS=[["schedule","📅 スケジュール"],["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"],["goal","🎯 目標設定"]];
   let sCurTab="schedule";
   const sTabBar=div({className:"tabs",style:{marginBottom:"24px"}});
@@ -3680,7 +3712,7 @@ function renderTAttribute(root){
       btn({className:"btn btn-g sm",onClick:()=>ov.remove()},["✕"]),
     ]));
 
-    const body=div({style:{padding:"24px",display:"flex",flexDirection:"column",gap:"16px"}});
+    const body=div({style:{padding:"clamp(16px,4vw,24px)",display:"flex",flexDirection:"column",gap:"16px"}});
 
     // ── 主属性 ──
     body.append(div({style:{textAlign:"center",padding:"16px 0"}},[
