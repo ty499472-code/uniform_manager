@@ -3846,117 +3846,125 @@ async function renderChat(root, userId, userName, isTeacher=false){
   S.chatRooms=await DB.getChatRooms();
   root.innerHTML="";
 
-  // 自分の参加ルームをlocalStorageで管理（DB保存なし・端末ごと）
   const myRoomsKey=`my_rooms_${userId}`;
   let myRoomIds=new Set(JSON.parse(localStorage.getItem(myRoomsKey)||"[]"));
   const saveMyRooms=()=>localStorage.setItem(myRoomsKey,JSON.stringify([...myRoomIds]));
-  // 今日の会場ルームIDをlocalStorageで管理
   const todayVenueKey=`today_venue_${userId}`;
   let todayVenueId=localStorage.getItem(todayVenueKey)||"";
 
-  // ルーム構造：固定 + 大会ルーム（大会チャット配下に会場サブルームを表示） + 自由グループ
   const fixedRooms=[
     {id:"all",   name:"📢 全体チャット",      sub:"部員・教員全員", fixed:true},
     {id:"staff", name:"👨‍🏫 教員・指導者専用", sub:"教員・指導者のみ", fixed:true, staffOnly:true},
   ];
-  // 大会ルーム（tournamentId付き）と通常グループを分離
-  const tournamentRooms=S.chatRooms.filter(r=>r.tournamentId);
-  const groupRooms    =S.chatRooms.filter(r=>!r.tournamentId);
-  // 会場ルーム（parentRoomId付き）
-  const venueRooms    =S.chatRooms.filter(r=>r.isVenue);
-
   const allRooms=[...fixedRooms,...S.chatRooms];
   const visibleRooms=isTeacher?allRooms:allRooms.filter(r=>!r.staffOnly);
 
-  const hdr=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}});
-  hdr.append(div({style:{fontSize:"20px",fontWeight:700}},["💬 チャット"]));
+  // モバイル判定
+  const isMobile=()=>window.innerWidth<=640;
+
+  // ── レイアウト ──
+  const hdr=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}});
+  hdr.append(div({style:{fontSize:"18px",fontWeight:700}},["💬 チャット"]));
   if(isTeacher){
-    hdr.append(btn({className:"btn btn-p",onClick:()=>openChatRoomModal(null,async()=>{
+    hdr.append(btn({className:"btn btn-p sm",onClick:()=>openChatRoomModal(null,async()=>{
       S.chatRooms=await DB.getChatRooms(); renderChat(root,userId,userName,true);
-    })},["＋ グループを作成"]));
+    })},["＋ グループ作成"]));
   }
-  const leftCol=div({style:{flex:"0 0 230px",minWidth:0,display:"flex",flexDirection:"column",gap:"4px"}});
+
+  const wrap=div({style:{display:"flex",gap:"16px",alignItems:"flex-start"}});
+  const leftCol=div({style:{flex:"0 0 220px",minWidth:0,display:"flex",flexDirection:"column",gap:"4px"}});
   const rightCol=div({style:{flex:"1 1 0",minWidth:0}});
-  root.append(hdr, div({style:{display:"flex",gap:"16px",alignItems:"flex-start",flexWrap:"wrap"}},[leftCol,rightCol]));
+  root.append(hdr,wrap);
+
+  // スマホ：初期は左カラムのみ表示
+  const applyLayout=()=>{
+    if(isMobile()){
+      wrap.style.flexDirection="column";
+      leftCol.style.flex="";
+      leftCol.style.width="100%";
+    } else {
+      wrap.style.flexDirection="row";
+      leftCol.style.flex="0 0 220px";
+      leftCol.style.width="";
+    }
+  };
+  applyLayout();
+  window.addEventListener("resize",applyLayout,{once:true});
+  wrap.append(leftCol,rightCol);
 
   let activeRoomId=null;
   const readMarks=await DB.getReadMarks(userId);
 
+  // ── ルーム選択 ──
   const buildRoomList=async()=>{
     leftCol.innerHTML="";
     for(const room of visibleRooms){
-      // 会場サブルームはここでは表示しない（大会ルームの中で表示）
       if(room.isVenue) continue;
-
       const msgs=await DB.getChatMessages(room.id);
       const lastRead=readMarks[room.id]||"";
       const unread=msgs.filter(m=>m.createdAt>lastRead&&m.senderId!==userId).length;
       const isActive=activeRoomId===room.id;
 
       const card=div({style:{
-        padding:"9px 11px",borderRadius:"8px",cursor:"pointer",transition:"all .15s",
-        border:`1.5px solid ${isActive?"var(--accent)":"var(--border)"}`,
-        background:isActive?"rgba(244,162,40,.1)":"var(--card)",
+        padding:"12px 14px",borderRadius:"10px",cursor:"pointer",transition:"all .15s",
+        border:`1.5px solid ${isActive?"var(--accent2)":"var(--border)"}`,
+        background:isActive?"rgba(46,109,180,.1)":"#fff",
+        boxShadow:isActive?"0 2px 8px rgba(46,109,180,.15)":"var(--sh)",
       }});
-      const nameRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}});
+      const nameRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"6px"}});
       nameRow.append(
-        div({style:{fontWeight:600,fontSize:"12px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[room.name]),
-        unread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"1px 6px",fontSize:"10px",fontWeight:700,flexShrink:0}},[String(unread)]):"",
+        div({style:{fontWeight:700,fontSize:"14px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:isActive?"var(--accent2)":"var(--text)"}},[room.name]),
+        unread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"2px 7px",fontSize:"11px",fontWeight:700,flexShrink:0}},[String(unread)]):"",
       );
-      // 教員：会場追加・編集・削除ボタン
       if(isTeacher&&!room.fixed){
-        const btns=div({style:{display:"flex",gap:"2px",flexShrink:0}});
+        const btns=div({style:{display:"flex",gap:"3px",flexShrink:0,marginTop:"4px"}});
         if(room.tournamentId){
-          btns.append(btn({className:"btn btn-b sm",style:{padding:"1px 6px",fontSize:"10px"},onClick:async e=>{
+          btns.append(btn({className:"btn btn-b sm",style:{padding:"2px 8px",fontSize:"11px"},onClick:async e=>{
             e.stopPropagation();
             openVenueModal(room,async()=>{ S.chatRooms=await DB.getChatRooms(); renderChat(root,userId,userName,true); });
           }},["＋会場"]));
         }
-        btns.append(
-          btn({className:"btn btn-d sm",style:{padding:"1px 6px",fontSize:"10px"},onClick:async e=>{
-            e.stopPropagation();
-            if(!confirm(`「${room.name}」を削除しますか？`))return;
-            await DB.deleteChatRoom(room.id);
-            S.chatRooms=S.chatRooms.filter(r=>r.id!==room.id);
-            renderChat(root,userId,userName,true);
-          }},["削除"]),
-        );
+        btns.append(btn({className:"btn btn-d sm",style:{padding:"2px 8px",fontSize:"11px"},onClick:async e=>{
+          e.stopPropagation();
+          if(!confirm(`「${room.name}」を削除しますか？`))return;
+          await DB.deleteChatRoom(room.id);
+          S.chatRooms=S.chatRooms.filter(r=>r.id!==room.id);
+          renderChat(root,userId,userName,true);
+        }},["削除"]));
         nameRow.append(btns);
       }
-      card.append(
-        nameRow,
-        room.sub?div({style:{fontSize:"10px",color:"var(--muted)",marginTop:"2px"}},[room.sub]):"",
-        msgs.length?div({style:{fontSize:"10px",color:"var(--muted)",marginTop:"3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[msgs[msgs.length-1].senderName+": "+msgs[msgs.length-1].text]):"",
-      );
+      if(room.sub) card.append(div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"3px"}},[room.sub]));
+      if(msgs.length) card.append(div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},[msgs[msgs.length-1].senderName+": "+msgs[msgs.length-1].text]));
+      card.prepend(nameRow);
       card.addEventListener("click",()=>{ activeRoomId=room.id; buildRoomList(); openRoom(room); });
       leftCol.append(card);
 
-      // 大会ルームの会場サブルームをインデントして表示
+      // 会場サブルーム
       if(room.tournamentId){
         const venues=S.chatRooms.filter(r=>r.isVenue&&r.parentRoomId===room.id);
         for(const v of venues){
           const isMine=myRoomIds.has(v.id);
           const isToday=todayVenueId===v.id;
-          if(!isMine&&!isTeacher) continue; // 参加していない選手には非表示
+          if(!isMine&&!isTeacher) continue;
           const vMsgs=await DB.getChatMessages(v.id);
           const vLastRead=readMarks[v.id]||"";
           const vUnread=vMsgs.filter(m=>m.createdAt>vLastRead&&m.senderId!==userId).length;
           const vActive=activeRoomId===v.id;
           const vCard=div({style:{
-            padding:"7px 11px 7px 20px",borderRadius:"8px",cursor:"pointer",transition:"all .15s",
-            border:`1.5px solid ${vActive?"var(--accent)":isToday?"rgba(46,204,113,.4)":"var(--border)"}`,
-            background:vActive?"rgba(244,162,40,.1)":isToday?"rgba(46,204,113,.06)":"var(--card)",
-            marginLeft:"8px",
+            padding:"10px 12px 10px 20px",borderRadius:"8px",cursor:"pointer",transition:"all .15s",
+            border:`1.5px solid ${vActive?"var(--accent2)":isToday?"rgba(26,122,74,.4)":"var(--border)"}`,
+            background:vActive?"rgba(46,109,180,.1)":isToday?"rgba(26,122,74,.06)":"#fff",
+            marginLeft:"10px",
           }});
-          const vNameRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}});
+          const vNameRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"6px"}});
           vNameRow.append(
-            div({style:{fontWeight:600,fontSize:"12px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:isToday?"var(--green)":"var(--text)"}},[
+            div({style:{fontWeight:600,fontSize:"13px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:isToday?"var(--green)":"var(--text)"}},[
               (isToday?"📍 ":"")+v.name
             ]),
-            vUnread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"1px 6px",fontSize:"10px",fontWeight:700}},[String(vUnread)]):"",
+            vUnread>0?span({style:{background:"var(--red)",color:"#fff",borderRadius:"100px",padding:"2px 7px",fontSize:"11px",fontWeight:700}},[String(vUnread)]):"",
           );
           if(isTeacher){
-            vNameRow.append(btn({className:"btn btn-d sm",style:{padding:"1px 6px",fontSize:"10px"},onClick:async e=>{
+            vNameRow.append(btn({className:"btn btn-d sm",style:{padding:"2px 8px",fontSize:"11px"},onClick:async e=>{
               e.stopPropagation();
               if(!confirm(`「${v.name}」を削除しますか？`))return;
               await DB.deleteChatRoom(v.id);
@@ -3968,23 +3976,27 @@ async function renderChat(root, userId, userName, isTeacher=false){
           vCard.addEventListener("click",()=>{ activeRoomId=v.id; buildRoomList(); openRoom(v); });
           leftCol.append(vCard);
         }
-
-        // 選手：会場ルームへの参加ボタン
         if(!isTeacher){
           const allVenues=S.chatRooms.filter(r=>r.isVenue&&r.parentRoomId===room.id);
           if(allVenues.length){
-            const joinBtn=btn({className:"btn btn-g sm",style:{marginLeft:"8px",fontSize:"11px",marginBottom:"4px"},onClick:()=>openVenueJoinModal(allVenues,room,async()=>{
+            leftCol.append(btn({className:"btn btn-g sm",style:{marginLeft:"10px",fontSize:"12px",marginBottom:"4px",minHeight:"36px"},onClick:()=>openVenueJoinModal(allVenues,room,async()=>{
               S.chatRooms=await DB.getChatRooms(); buildRoomList();
-            })},["📍 会場を選ぶ"]);
-            leftCol.append(joinBtn);
+            })},["📍 会場を選ぶ"]));
           }
         }
       }
     }
   };
 
+  // ── チャット本体 ──
   const openRoom=async(room)=>{
     rightCol.innerHTML="";
+    // スマホ：ルームリストを非表示にして右カラムを全幅に
+    if(isMobile()){
+      leftCol.style.display="none";
+      rightCol.style.width="100%";
+    }
+
     const msgs=await DB.getChatMessages(room.id);
     await DB.markRead(userId,room.id);
     readMarks[room.id]=new Date().toISOString();
@@ -3992,9 +4004,20 @@ async function renderChat(root, userId, userName, isTeacher=false){
     const isVenueRoom=room.isVenue;
     const isToday=todayVenueId===room.id;
 
+    // 戻るボタン（スマホのみ表示）
+    const backBtn=btn({className:"btn btn-g sm",style:{display:isMobile()?"inline-flex":"none",marginBottom:"10px",gap:"6px"},onClick:()=>{
+      rightCol.innerHTML="";
+      leftCol.style.display="flex";
+      activeRoomId=null;
+      buildRoomList();
+    }},["← ルーム一覧"]);
+
+    // メッセージエリア：画面高さから動的に
+    const msgAreaH=isMobile()?"calc(100svh - 280px)":"420px";
     const msgArea=div({style:{
-      height:isVenueRoom?"360px":"420px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"8px",
-      padding:"16px",background:"var(--navy)",borderRadius:"10px",marginBottom:"12px",
+      height:msgAreaH,minHeight:"240px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"8px",
+      padding:"14px",background:"var(--navy-mid)",borderRadius:"12px",marginBottom:"12px",
+      border:"1.5px solid var(--border)",
     }});
 
     const renderMsgs=(messages)=>{
@@ -4006,25 +4029,35 @@ async function renderChat(root, userId, userName, isTeacher=false){
       messages.forEach(m=>{
         const isMe=m.senderId===userId;
         const isTeacherMsg=m.senderId==="__teacher__";
-        // 会場設定メッセージは特別表示
         if(m.isVenueAnnounce){
-          msgArea.append(div({style:{textAlign:"center",padding:"8px 16px",margin:"4px 0",background:"rgba(46,204,113,.1)",borderRadius:"8px",border:"1px solid rgba(46,204,113,.3)",fontSize:"13px",color:"var(--green)"}},[`📍 ${m.text}`]));
+          msgArea.append(div({style:{textAlign:"center",padding:"8px 16px",margin:"4px 0",background:"rgba(26,122,74,.1)",borderRadius:"8px",border:"1px solid rgba(26,122,74,.3)",fontSize:"13px",color:"var(--green)"}},[`📍 ${m.text}`]));
           return;
         }
         const bubble=div({style:{display:"flex",flexDirection:"column",alignItems:isMe?"flex-end":"flex-start",marginBottom:"4px"}});
         bubble.append(
-          div({style:{fontSize:"10px",color:"var(--muted)",marginBottom:"2px",[isMe?"paddingRight":"paddingLeft"]:"4px"}},[isTeacherMsg?"🏫 "+m.senderName:m.senderName]),
+          div({style:{fontSize:"11px",color:"var(--muted)",marginBottom:"3px",[isMe?"paddingRight":"paddingLeft"]:"6px"}},[isTeacherMsg?"🏫 "+m.senderName:m.senderName]),
           (()=>{
-            const b=div({style:{maxWidth:"70%",padding:"8px 12px",borderRadius:isMe?"12px 4px 12px 12px":"4px 12px 12px 12px",background:isMe?"var(--accent)":isTeacherMsg?"rgba(74,158,255,.2)":"var(--navy-mid)",color:isMe?"#000":"var(--text)",fontSize:"13px",lineHeight:1.6,wordBreak:"break-word"}},[m.text]);
+            const b=div({style:{
+              maxWidth:isMobile()?"82%":"70%",
+              padding:"10px 14px",
+              borderRadius:isMe?"14px 4px 14px 14px":"4px 14px 14px 14px",
+              background:isMe?"var(--accent2)":isTeacherMsg?"rgba(46,109,180,.15)":"#fff",
+              color:isMe?"#fff":"var(--text)",
+              fontSize:"14px",lineHeight:1.65,wordBreak:"break-word",
+              boxShadow:"0 1px 4px rgba(0,0,0,.08)",
+              border:isMe?"none":"1.5px solid var(--border)",
+            }},[m.text]);
             if(isMe){
-              let pt; b.style.cursor="pointer"; b.title="長押しで削除";
+              let pt; b.style.cursor="pointer";
+              b.addEventListener("touchstart",()=>{ pt=setTimeout(async()=>{ if(!confirm("削除しますか？"))return; await DB.deleteChatMessage(room.id,m.id); const u=await DB.getChatMessages(room.id); renderMsgs(u); buildRoomList(); },600); },{passive:true});
+              b.addEventListener("touchend",()=>clearTimeout(pt));
               b.addEventListener("mousedown",()=>{ pt=setTimeout(async()=>{ if(!confirm("削除しますか？"))return; await DB.deleteChatMessage(room.id,m.id); const u=await DB.getChatMessages(room.id); renderMsgs(u); buildRoomList(); },700); });
               b.addEventListener("mouseup",()=>clearTimeout(pt));
               b.addEventListener("mouseleave",()=>clearTimeout(pt));
             }
             return b;
           })(),
-          div({style:{fontSize:"10px",color:"var(--muted)",marginTop:"2px",[isMe?"paddingRight":"paddingLeft"]:"4px"}},[fmtD(m.createdAt)]),
+          div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"3px",[isMe?"paddingRight":"paddingLeft"]:"6px"}},[fmtD(m.createdAt)]),
         );
         msgArea.append(bubble);
       });
@@ -4032,45 +4065,33 @@ async function renderChat(root, userId, userName, isTeacher=false){
     };
     renderMsgs(msgs);
 
-    // 会場ルームの場合：「本日の会場をここにする」ボタン
+    // 会場設定ボタン
     let venueBar="";
     if(isVenueRoom&&!isTeacher){
-      const todayBtn=btn({
+      venueBar=btn({
         className:isToday?"btn btn-g":"btn btn-p",
-        style:{width:"100%",justifyContent:"center",padding:"10px 0",marginBottom:"10px",
-          background:isToday?"rgba(46,204,113,.15)":"",
-          color:isToday?"var(--green)":"",
-          border:isToday?"1px solid rgba(46,204,113,.4)":"",
-        },
+        style:{width:"100%",justifyContent:"center",padding:"12px 0",marginBottom:"10px",fontSize:"14px",
+          ...(isToday?{background:"rgba(26,122,74,.1)",color:"var(--green)",border:"1.5px solid rgba(26,122,74,.4)"}:{})},
         onClick:async()=>{
-          if(isToday){
-            // 解除
-            todayVenueId=""; localStorage.removeItem(todayVenueKey);
-          } else {
+          if(isToday){ todayVenueId=""; localStorage.removeItem(todayVenueKey); }
+          else {
             todayVenueId=room.id; localStorage.setItem(todayVenueKey,room.id);
-            // 全体チャットに会場通知メッセージを送信
-            const announceMsg={
-              id:genId(), roomId:"all", senderId:userId, senderName:userName,
-              text:`${userName} が本日の会場を「${room.name}」に設定しました`,
-              isVenueAnnounce:true, createdAt:new Date().toISOString(),
-            };
+            const announceMsg={id:genId(),roomId:"all",senderId:userId,senderName:userName,
+              text:`${userName} が本日の会場を「${room.name}」に設定しました`,isVenueAnnounce:true,createdAt:new Date().toISOString()};
             await DB.sendChatMessage("all",announceMsg);
-            // Firestoreに通知フラグを書き込む（GASが検知してメール送信）
-            try{
-              await setDoc(doc(db,"notifications",`venue_${userId}`),{
-                text:`${userName} が本日の会場を「${room.name}」に設定しました`,
-                updatedAt:new Date().toISOString(), notified:false,
-              });
-            }catch(_){}
+            try{ await setDoc(doc(db,"notifications",`venue_${userId}`),{text:announceMsg.text,updatedAt:new Date().toISOString(),notified:false}); }catch(_){}
           }
           buildRoomList(); openRoom(room);
         },
       },[isToday?"✅ 本日の会場："+room.name+"（解除する）":"📍 本日の会場をここにする"]);
-      venueBar=todayBtn;
     }
 
+    // 入力エリア
+    const textI=ta({className:"inp",rows:isMobile()?3:2},"");
+    textI.placeholder="メッセージを入力...";
+    textI.style.resize="none";
+    textI.style.fontSize=isMobile()?"15px":"13px";
     let inputText="";
-    const textI=ta({className:"inp",rows:2},""); textI.placeholder="メッセージを入力...（Enterで送信）"; textI.style.resize="none";
     textI.addEventListener("input",e=>inputText=e.target.value);
     const sendMsg=async()=>{
       const text=inputText.trim(); if(!text)return;
@@ -4079,24 +4100,28 @@ async function renderChat(root, userId, userName, isTeacher=false){
       textI.value=""; inputText="";
       const updated=await DB.getChatMessages(room.id); renderMsgs(updated); buildRoomList();
     };
-    textI.addEventListener("keydown",async e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); await sendMsg(); } });
+    textI.addEventListener("keydown",async e=>{ if(e.key==="Enter"&&!e.shiftKey&&!isMobile()){ e.preventDefault(); await sendMsg(); } });
+
+    const sendBtn=btn({className:"btn btn-p",style:{alignSelf:"flex-end",padding:"12px 20px",fontSize:"15px",minHeight:"48px",flexShrink:0},onClick:sendMsg},["送信"]);
 
     rightCol.append(
-      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"8px",paddingBottom:"8px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:"8px"}},[
+      backBtn,
+      div({style:{fontWeight:700,fontSize:"15px",marginBottom:"10px",paddingBottom:"8px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:"8px",color:"var(--accent2)"}},[
         room.name,
-        isVenueRoom&&isToday?span({style:{fontSize:"11px",color:"var(--green)",fontWeight:700}},["📍 本日の会場"]):""
+        isVenueRoom&&isToday?span({style:{fontSize:"11px",color:"var(--green)",fontWeight:700}},["📍 本日の会場"]):"",
       ]),
       venueBar||"",
       msgArea,
-      div({style:{display:"flex",gap:"8px",alignItems:"flex-end"}},[
+      div({style:{display:"flex",gap:"10px",alignItems:"flex-end"}},[
         div({style:{flex:1}},[textI]),
-        btn({className:"btn btn-p",style:{alignSelf:"flex-end",padding:"8px 20px"},onClick:sendMsg},["送信"]),
+        sendBtn,
       ]),
     );
   };
 
   await buildRoomList();
-  if(visibleRooms.filter(r=>!r.isVenue).length){
+  // PC：最初のルームを自動で開く（スマホはルームリストを先に表示）
+  if(!isMobile()&&visibleRooms.filter(r=>!r.isVenue).length){
     const first=visibleRooms.find(r=>!r.isVenue);
     activeRoomId=first.id; buildRoomList(); openRoom(first);
   }
