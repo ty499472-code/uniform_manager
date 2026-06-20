@@ -807,7 +807,7 @@ function renderTeacher(){
     tabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"32px 0",textAlign:"center"}},[" 読み込み中..."]));
     try{
       if(k==="schedule"){
-        tabContent.innerHTML=""; renderSchedule(tabContent);
+        tabContent.innerHTML=""; renderSchedule(tabContent,true);
       } else if(k==="items"){
         [S.items,S.resp,S.students]=await Promise.all([DB.getItems(),DB.getResps(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTItems(tabContent);
@@ -862,7 +862,83 @@ function renderTeacher(){
 const SCHEDULE_PDF="https://docs.google.com/spreadsheets/d/e/2PACX-1vSU79WkVSBatzoeo0F_sY2z_kvSnetSO3rTAlXbzS0fuoUlMrPMcqe3zDJRPY99NTA_599RvLyA0nDF/pub?gid=2108880916&single=true&output=pdf";
 const SCHEDULE_SITE="https://sites.google.com/stu.seikyo.ed.jp/seikyobad/%E3%82%B9%E3%82%B1%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB";
 
-function renderSchedule(root){
+// ── 教員ホーム：選手の新規入力をポップアップ通知 ──
+async function showGoalNotifyToasts(root){
+  let notifySnap, readSnap, studentsSnap;
+  try{
+    [notifySnap,readSnap]=await Promise.all([
+      withTimeout(getDocs(collection(db,"goal_notify"))),
+      withTimeout(getDocs(collection(db,"goal_read"))),
+    ]);
+  }catch{ return; }
+
+  const notifyMap={}; notifySnap.docs.forEach(d=>notifyMap[d.id]=d.data().updatedAt);
+  const readMap={};   readSnap.docs.forEach(d=>readMap[d.id]=d.data().readAt);
+
+  // 未読（NEW）の選手IDを抽出
+  const unreadIds=Object.keys(notifyMap).filter(sid=>{
+    const n=notifyMap[sid], r=readMap[sid];
+    return n&&(!r||n>r);
+  });
+  if(!unreadIds.length) return;
+
+  if(!S.students||!S.students.length){ S.students=await DB.getStudents(); }
+
+  // トースト表示エリア（画面右下に固定）
+  let toastArea=document.getElementById("goalToastArea");
+  if(!toastArea){
+    toastArea=div({id:"goalToastArea",style:{
+      position:"fixed",bottom:"20px",right:"20px",zIndex:"2000",
+      display:"flex",flexDirection:"column",gap:"10px",maxWidth:"340px",width:"calc(100% - 40px)",
+    }});
+    document.body.append(toastArea);
+  }
+  toastArea.innerHTML=""; // 重複防止：毎回クリアしてから再構築
+
+  for(const sid of unreadIds){
+    const student=S.students.find(s=>s.id===sid);
+    if(!student) continue;
+
+    // 最新の目標/メモを取得して内容を判定
+    let label="新しい記録";
+    try{
+      const goals=await DB.getGoals(sid);
+      const latest=goals[0]; // createdAt降順
+      if(latest){
+        if(latest.type==="match_goal") label="試合目標";
+        else if(latest.type==="annual_goal") label="年間目標";
+        else if(latest.type==="memo") label="一言記録";
+      }
+    }catch{}
+
+    const toast=div({style:{
+      background:"#fff",border:"1.5px solid var(--accent2)",borderRadius:"12px",
+      padding:"14px 16px",boxShadow:"0 8px 24px rgba(46,109,180,.25)",
+      display:"flex",alignItems:"flex-start",gap:"10px",
+      animation:"slideIn .3s ease",cursor:"pointer",
+    }});
+    toast.append(
+      div({style:{fontSize:"20px",flexShrink:0}},["🔔"]),
+      div({style:{flex:1}},[
+        div({style:{fontWeight:700,fontSize:"13px",color:"var(--text)"}},[`${student.name} が ${label} を入力しました`]),
+        div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},["タップして確認"]),
+      ]),
+      btn({className:"btn btn-g sm",style:{padding:"2px 8px",fontSize:"11px",flexShrink:0},onClick:async e=>{
+        e.stopPropagation();
+        await DB.markGoalRead(sid);
+        toast.remove();
+      }},["×"]),
+    );
+    toast.addEventListener("click",async()=>{
+      await DB.markGoalRead(sid);
+      toast.remove();
+      openTeacherGoalView(student);
+    });
+    toastArea.append(toast);
+  }
+}
+
+function renderSchedule(root,isTeacher=false){
   root.innerHTML="";
 
   // ヘッダー
@@ -876,6 +952,11 @@ function renderSchedule(root){
       btn({className:"btn btn-g",onClick:()=>window.open(SCHEDULE_SITE,"_blank")},["🌐 サイトで開く"]),
     ]),
   ]));
+
+  // ── 教員のみ：選手の新規入力をポップアップ通知 ──
+  if(isTeacher){
+    showGoalNotifyToasts(root);
+  }
 
   // iframeでPDF埋め込み
   const iframeWrap=div({style:{
