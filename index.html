@@ -867,7 +867,6 @@ function renderTeacher(){
         // 欠席データも取得
         try{
           S.absences=await DB.getAbsences();
-          console.log("欠席データ取得件数:", S.absences.length, S.absences.slice(0,3));
         }catch(e){
           console.warn("欠席データ取得失敗:", e);
           S.absences=[];
@@ -2026,7 +2025,6 @@ function renderTStudents(root){
               (()=>{
                 const normName=(n)=>n.replace(/\s+/g,"").replace(/　/g,"");
                 const abs=(S.absences||[]).filter(a=>normName(a.name)===normName(s.name));
-                if(abs.length) console.log(`${s.name}: 欠席${abs.filter(a=>a.type==="欠席").length} 遅刻${abs.filter(a=>a.type==="遅刻").length} 早退${abs.filter(a=>a.type==="早退").length}`);
                 const absent=abs.filter(a=>a.type==="欠席").length;
                 const late  =abs.filter(a=>a.type==="遅刻").length;
                 const early =abs.filter(a=>a.type==="早退").length;
