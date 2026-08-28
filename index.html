@@ -1024,35 +1024,74 @@ function renderSchedule(root,isTeacher=false,student=null){
     const TYPE_BG  ={欠席:"rgba(192,57,43,.06)",遅刻:"rgba(230,126,34,.06)",早退:"rgba(26,107,60,.06)"};
 
     if(isTeacher){
-      // ── 教員：本日分を全員表示 ──
-      const todayAbs=absences.filter(a=>a.isToday||a.dateFrom===todayStr);
-      if(!todayAbs.length){
-        absPanel.append(div({style:{padding:"12px 16px",borderRadius:"10px",background:"rgba(26,107,60,.06)",border:"1.5px solid rgba(26,107,60,.2)",fontSize:"13px",color:"var(--green)",marginBottom:"16px"}},["✅ 本日の欠席・遅刻・早退連絡はありません"]));
-        return;
-      }
-      const counts={欠席:0,遅刻:0,早退:0};
-      todayAbs.forEach(a=>{ if(counts[a.type]!==undefined) counts[a.type]++; });
-      const badges=div({style:{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}});
-      Object.entries(counts).forEach(([t,n])=>{ if(n) badges.append(badge("b-0",`${t} ${n}名`)); });
-      const rows=div({style:{display:"flex",flexDirection:"column",gap:"6px"}});
-      todayAbs.sort((a,b)=>({欠席:0,遅刻:1,早退:2}[a.type]||0)-({欠席:0,遅刻:1,早退:2}[b.type]||0))
-        .forEach(a=>{
-          const noContact=a.contact==="連絡していない"||!a.contact;
-          rows.append(div({style:{padding:"10px 14px",borderRadius:"8px",background:TYPE_BG[a.type]||"var(--card)",border:`1.5px solid ${noContact?"rgba(192,57,43,.3)":TYPE_COLOR[a.type]||"var(--border)"}`,display:"flex",gap:"10px",alignItems:"flex-start",flexWrap:"wrap"}},[
-            div({style:{fontWeight:700,fontSize:"13px",color:TYPE_COLOR[a.type]||"var(--text)",flexShrink:0}},[a.type]),
-            div({style:{flex:1,minWidth:"100px"}},[
-              div({style:{fontWeight:600,fontSize:"14px",marginBottom:"2px"}},[a.name]),
-              a.reason?div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.5}},[a.reason]):"",
-            ]),
-            noContact?badge("b-r","未連絡"):badge("b-g","連絡済"),
-          ]));
-        });
-      const hdrRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}});
-      hdrRow.append(
-        div({style:{fontWeight:700,fontSize:"14px"}},[`📋 本日の連絡（${todayAbs.length}件）`]),
-        div({style:{fontSize:"12px",color:"var(--muted)"}},[todayStr]),
-      );
-      absPanel.append(div({className:"card",style:{marginBottom:"16px"}},[hdrRow,badges,rows]));
+      // ── 教員：日付ナビ付きで表示 ──
+      const TYPE_COLOR2={欠席:"var(--red)",遅刻:"#E67E22",早退:"var(--accent2)"};
+      const TYPE_BG2  ={欠席:"rgba(192,57,43,.06)",遅刻:"rgba(230,126,34,.06)",早退:"rgba(26,107,60,.06)"};
+
+      // 表示する日付（オフセット0=今日）
+      let offset=0;
+
+      const getDateStr=(off)=>{
+        const d=new Date(); d.setDate(d.getDate()+off);
+        return d.toLocaleDateString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"/");
+      };
+      const getDateLabel=(off)=>{
+        const d=new Date(); d.setDate(d.getDate()+off);
+        const label=d.toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"});
+        if(off===0) return `今日 ${label}`;
+        if(off===-1) return `昨日 ${label}`;
+        if(off===1) return `明日 ${label}`;
+        return label;
+      };
+
+      const panelContent=div({});
+
+      const buildDayPanel=()=>{
+        panelContent.innerHTML="";
+        const dateStr=getDateStr(offset);
+        const dayAbs=absences.filter(a=>a.dateFrom===dateStr);
+
+        // ナビバー
+        const navBar=div({style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px"}});
+        const prevBtn=btn({className:"btn btn-g sm",onClick:()=>{ offset--; buildDayPanel(); }},["◀"]);
+        const nextBtn=btn({className:"btn btn-g sm",onClick:()=>{ offset++; buildDayPanel(); }},["▶"]);
+        const todayBtn=offset!==0?btn({className:"btn btn-g sm",onClick:()=>{ offset=0; buildDayPanel(); }},["今日に戻る"]):"";
+        navBar.append(
+          prevBtn,
+          div({style:{flex:1,textAlign:"center",fontWeight:700,fontSize:"14px"}},[getDateLabel(offset)]),
+          nextBtn,
+        );
+        if(todayBtn) navBar.append(todayBtn);
+
+        if(!dayAbs.length){
+          panelContent.append(navBar, div({style:{padding:"10px 0",fontSize:"13px",color:"var(--muted)",textAlign:"center"}},["この日の連絡はありません"]));
+          return;
+        }
+        const counts={欠席:0,遅刻:0,早退:0};
+        dayAbs.forEach(a=>{ if(counts[a.type]!==undefined) counts[a.type]++; });
+        const bdgs=div({style:{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}});
+        Object.entries(counts).forEach(([t,n])=>{ if(n) bdgs.append(badge("b-0",`${t} ${n}名`)); });
+        const rows2=div({style:{display:"flex",flexDirection:"column",gap:"6px"}});
+        dayAbs.sort((a,b)=>({欠席:0,遅刻:1,早退:2}[a.type]||0)-({欠席:0,遅刻:1,早退:2}[b.type]||0))
+          .forEach(a=>{
+            const noContact=a.contact==="連絡していない"||!a.contact;
+            rows2.append(div({style:{padding:"10px 14px",borderRadius:"8px",background:TYPE_BG2[a.type]||"var(--card)",border:`1.5px solid ${noContact?"rgba(192,57,43,.3)":TYPE_COLOR2[a.type]||"var(--border)"}`,display:"flex",gap:"10px",alignItems:"flex-start",flexWrap:"wrap"}},[
+              div({style:{fontWeight:700,fontSize:"13px",color:TYPE_COLOR2[a.type]||"var(--text)",flexShrink:0}},[a.type]),
+              div({style:{flex:1,minWidth:"100px"}},[
+                div({style:{fontWeight:600,fontSize:"14px",marginBottom:"2px"}},[a.name]),
+                a.reason?div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.5}},[a.reason]):"",
+              ]),
+              noContact?badge("b-r","未連絡"):badge("b-g","連絡済"),
+            ]));
+          });
+        panelContent.append(navBar, bdgs, rows2);
+      };
+
+      buildDayPanel();
+      absPanel.append(div({className:"card",style:{marginBottom:"16px"}},[
+        div({style:{fontWeight:700,fontSize:"14px",marginBottom:"10px",color:"var(--accent2)"}},[`📋 欠席・遅刻・早退連絡`]),
+        panelContent,
+      ]));
 
     } else if(student){
       // ── 選手：自分の履歴を表示 ──
