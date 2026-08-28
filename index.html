@@ -295,9 +295,7 @@ const DB = {
   },
   // 欠席・遅刻データ（スプレッドシートCSVから直接取得）
   async getAbsences(){
-    const SHEET_ID="1iK4t4x3_tYASJZqCD9IDXBNsdba8FNif5OQTQ0cK9-c";
-    const GID="523237283";
-    const url=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+    const url="https://docs.google.com/spreadsheets/d/e/2PACX-1vQBZKvgvNo9vood9SOmPddARp1sDBdsXudWZZOise1ltGao19Ber5x_dmWkMiUXvz8UIxzNY26use3O/pub?gid=523237283&single=true&output=csv";
     try{
       const res=await withTimeout(fetch(url),10000);
       if(!res.ok) throw new Error("fetch failed");
