@@ -1049,7 +1049,11 @@ function renderSchedule(root,isTeacher=false,student=null){
       const buildDayPanel=()=>{
         panelContent.innerHTML="";
         const dateStr=getDateStr(offset);
-        const dayAbs=absences.filter(a=>a.dateFrom===dateStr);
+        // 期間範囲でフィルタ（dateFrom <= 指定日 <= dateTo）
+        const dayAbs=absences.filter(a=>{
+          const from=a.dateFrom||""; const to=a.dateTo||a.dateFrom||"";
+          return dateStr>=from && dateStr<=to;
+        });
 
         // ナビバー
         const navBar=div({style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px"}});
@@ -1112,7 +1116,9 @@ function renderSchedule(root,isTeacher=false,student=null){
       myAbs.forEach(a=>{
         const isToday=a.dateFrom===todayStr;
         rows.append(div({style:{padding:"10px 14px",borderRadius:"8px",background:isToday?TYPE_BG[a.type]||"var(--card)":"#fff",border:`1.5px solid ${isToday?TYPE_COLOR[a.type]||"var(--border)":"var(--border)"}`,display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}},[
-          div({style:{fontSize:"12px",color:"var(--muted)",whiteSpace:"nowrap",minWidth:"80px"}},[a.dateFrom]),
+          div({style:{fontSize:"12px",color:"var(--muted)",whiteSpace:"nowrap",minWidth:"80px"}},[
+            a.dateFrom===a.dateTo||!a.dateTo?a.dateFrom:`${a.dateFrom}〜${a.dateTo}`,
+          ]),
           span({style:{fontWeight:700,fontSize:"12px",color:TYPE_COLOR[a.type]||"var(--text)",flexShrink:0}},[a.type]),
           a.reason?div({style:{fontSize:"12px",color:"var(--muted)",flex:1,lineHeight:1.5}},[a.reason]):"",
           isToday?badge("b-y","本日"):"",
