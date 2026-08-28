@@ -865,7 +865,13 @@ function renderTeacher(){
       } else if(k==="students"){
         [S.students,S.items,S.resp]=await Promise.all([DB.getStudents(),DB.getItems(),DB.getResps()]);
         // 欠席データも取得
-        try{ S.absences=await DB.getAbsences(); }catch{ S.absences=[]; }
+        try{
+          S.absences=await DB.getAbsences();
+          console.log("欠席データ取得件数:", S.absences.length, S.absences.slice(0,3));
+        }catch(e){
+          console.warn("欠席データ取得失敗:", e);
+          S.absences=[];
+        }
         // 目標更新通知データも取得
         try{
           const [notifySnap,readSnap]=await Promise.all([
@@ -991,10 +997,9 @@ async function showGoalNotifyToasts(root){
   }
 }
 
-function renderSchedule(root,isTeacher=false){
+function renderSchedule(root,isTeacher=false,student=null){
   root.innerHTML="";
 
-  // ヘッダー
   root.append(div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"10px"}},[
     div({},[
       div({style:{fontSize:"20px",fontWeight:700}},["📅 スケジュール"]),
@@ -1006,56 +1011,82 @@ function renderSchedule(root,isTeacher=false){
     ]),
   ]));
 
-  // ── 教員のみ：選手の新規入力をポップアップ通知 ──
-  if(isTeacher){
-    showGoalNotifyToasts(root);
-  }
+  if(isTeacher) showGoalNotifyToasts(root);
 
-  // ── 本日の欠席・遅刻・早退パネル ──
-  const todayStr=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"/");
+  // ── 欠席パネル ──
   const absPanel=div({style:{marginBottom:"16px"}});
-  absPanel.append(div({style:{color:"var(--muted)",fontSize:"12px"}},["欠席情報を読み込み中..."]));
+  absPanel.append(div({style:{color:"var(--muted)",fontSize:"12px",padding:"8px 0"}},["欠席情報を読み込み中..."]));
   root.append(absPanel);
+
   DB.getAbsences().then(absences=>{
-    const todayAbs=absences.filter(a=>a.isToday||a.dateFrom===todayStr);
     absPanel.innerHTML="";
-    if(!todayAbs.length){
-      absPanel.append(div({style:{
-        padding:"12px 16px",borderRadius:"10px",background:"rgba(26,122,74,.06)",
-        border:"1.5px solid rgba(26,122,74,.2)",fontSize:"13px",color:"var(--green)",marginBottom:"16px",
-      }},["✅ 本日の欠席・遅刻・早退連絡はありません"]));
-      return;
+    const todayStr=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"/");
+    const TYPE_COLOR={欠席:"var(--red)",遅刻:"#E67E22",早退:"var(--accent2)"};
+    const TYPE_BG  ={欠席:"rgba(192,57,43,.06)",遅刻:"rgba(230,126,34,.06)",早退:"rgba(26,107,60,.06)"};
+
+    if(isTeacher){
+      // ── 教員：本日分を全員表示 ──
+      const todayAbs=absences.filter(a=>a.isToday||a.dateFrom===todayStr);
+      if(!todayAbs.length){
+        absPanel.append(div({style:{padding:"12px 16px",borderRadius:"10px",background:"rgba(26,107,60,.06)",border:"1.5px solid rgba(26,107,60,.2)",fontSize:"13px",color:"var(--green)",marginBottom:"16px"}},["✅ 本日の欠席・遅刻・早退連絡はありません"]));
+        return;
+      }
+      const counts={欠席:0,遅刻:0,早退:0};
+      todayAbs.forEach(a=>{ if(counts[a.type]!==undefined) counts[a.type]++; });
+      const badges=div({style:{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}});
+      Object.entries(counts).forEach(([t,n])=>{ if(n) badges.append(badge("b-0",`${t} ${n}名`)); });
+      const rows=div({style:{display:"flex",flexDirection:"column",gap:"6px"}});
+      todayAbs.sort((a,b)=>({欠席:0,遅刻:1,早退:2}[a.type]||0)-({欠席:0,遅刻:1,早退:2}[b.type]||0))
+        .forEach(a=>{
+          const noContact=a.contact==="連絡していない"||!a.contact;
+          rows.append(div({style:{padding:"10px 14px",borderRadius:"8px",background:TYPE_BG[a.type]||"var(--card)",border:`1.5px solid ${noContact?"rgba(192,57,43,.3)":TYPE_COLOR[a.type]||"var(--border)"}`,display:"flex",gap:"10px",alignItems:"flex-start",flexWrap:"wrap"}},[
+            div({style:{fontWeight:700,fontSize:"13px",color:TYPE_COLOR[a.type]||"var(--text)",flexShrink:0}},[a.type]),
+            div({style:{flex:1,minWidth:"100px"}},[
+              div({style:{fontWeight:600,fontSize:"14px",marginBottom:"2px"}},[a.name]),
+              a.reason?div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.5}},[a.reason]):"",
+            ]),
+            noContact?badge("b-r","未連絡"):badge("b-g","連絡済"),
+          ]));
+        });
+      const hdrRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}});
+      hdrRow.append(
+        div({style:{fontWeight:700,fontSize:"14px"}},[`📋 本日の連絡（${todayAbs.length}件）`]),
+        div({style:{fontSize:"12px",color:"var(--muted)"}},[todayStr]),
+      );
+      absPanel.append(div({className:"card",style:{marginBottom:"16px"}},[hdrRow,badges,rows]));
+
+    } else if(student){
+      // ── 選手：自分の履歴を表示 ──
+      const myAbs=absences.filter(a=>{
+        const norm=(n)=>n.replace(/\s+/g,"").replace(/　/g,"");
+        return norm(a.name)===norm(student.name);
+      }).sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
+      if(!myAbs.length){
+        absPanel.append(div({style:{padding:"12px 16px",borderRadius:"10px",background:"rgba(26,107,60,.06)",border:"1.5px solid rgba(26,107,60,.2)",fontSize:"13px",color:"var(--green)",marginBottom:"16px"}},["✅ 今年度の欠席・遅刻・早退の記録はありません"]));
+        return;
+      }
+      // サマリー
+      const counts={欠席:0,遅刻:0,早退:0};
+      myAbs.forEach(a=>{ if(counts[a.type]!==undefined) counts[a.type]++; });
+      const badges=div({style:{display:"flex",gap:"6px",marginBottom:"12px",flexWrap:"wrap"}});
+      Object.entries(counts).forEach(([t,n])=>{ if(n) badges.append(badge(t==="欠席"?"b-r":t==="遅刻"?"b-y":"b-b",`${t} ${n}回`)); });
+      const rows=div({style:{display:"flex",flexDirection:"column",gap:"6px"}});
+      myAbs.forEach(a=>{
+        const isToday=a.dateFrom===todayStr;
+        rows.append(div({style:{padding:"10px 14px",borderRadius:"8px",background:isToday?TYPE_BG[a.type]||"var(--card)":"#fff",border:`1.5px solid ${isToday?TYPE_COLOR[a.type]||"var(--border)":"var(--border)"}`,display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}},[
+          div({style:{fontSize:"12px",color:"var(--muted)",whiteSpace:"nowrap",minWidth:"80px"}},[a.dateFrom]),
+          span({style:{fontWeight:700,fontSize:"12px",color:TYPE_COLOR[a.type]||"var(--text)",flexShrink:0}},[a.type]),
+          a.reason?div({style:{fontSize:"12px",color:"var(--muted)",flex:1,lineHeight:1.5}},[a.reason]):"",
+          isToday?badge("b-y","本日"):"",
+        ]));
+      });
+      const hdrRow=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}});
+      hdrRow.append(
+        div({style:{fontWeight:700,fontSize:"14px"}},[`📋 自分の欠席履歴（${myAbs.length}件）`]),
+        div({style:{fontSize:"12px",color:"var(--muted)"}},[`今年度`]),
+      );
+      absPanel.append(div({className:"card",style:{marginBottom:"16px"}},[hdrRow,badges,rows]));
     }
-    const TYPE_COLOR={欠席:"var(--red)",遅刻:"#E67E22",早退:"var(--blue)"};
-    const TYPE_BG={欠席:"rgba(192,57,43,.08)",遅刻:"rgba(230,126,34,.08)",早退:"rgba(46,109,180,.08)"};
-    const hdr2=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}});
-    hdr2.append(
-      div({style:{fontWeight:700,fontSize:"14px"}},[`📋 本日の連絡（${todayAbs.length}件）`]),
-      div({style:{fontSize:"12px",color:"var(--muted)"}},[todayStr]),
-    );
-    // 種別集計バッジ
-    const counts={欠席:0,遅刻:0,早退:0};
-    todayAbs.forEach(a=>{ if(counts[a.type]!==undefined) counts[a.type]++; });
-    const badges=div({style:{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}});
-    Object.entries(counts).forEach(([t,n])=>{ if(n) badges.append(badge("b-0",`${t} ${n}名`)); });
-    const rows=div({style:{display:"flex",flexDirection:"column",gap:"6px"}});
-    todayAbs.sort((a,b)=>{const o={欠席:0,遅刻:1,早退:2}; return (o[a.type]||0)-(o[b.type]||0);}).forEach(a=>{
-      const noContact=a.contact==="連絡していない"||!a.contact;
-      rows.append(div({style:{
-        padding:"10px 14px",borderRadius:"8px",
-        background:TYPE_BG[a.type]||"var(--card)",
-        border:`1.5px solid ${noContact?"rgba(192,57,43,.3)":TYPE_COLOR[a.type]||"var(--border)"}`,
-        display:"flex",gap:"10px",alignItems:"flex-start",flexWrap:"wrap",
-      }},[
-        div({style:{fontWeight:700,fontSize:"13px",color:TYPE_COLOR[a.type]||"var(--text)",flexShrink:0}},[a.type]),
-        div({style:{flex:1,minWidth:"100px"}},[
-          div({style:{fontWeight:600,fontSize:"14px",marginBottom:"2px"}},[a.name]),
-          a.reason?div({style:{fontSize:"12px",color:"var(--muted)",lineHeight:1.5}},[a.reason]):"",
-        ]),
-        noContact?badge("b-r","未連絡"):badge("b-g","連絡済"),
-      ]));
-    });
-    absPanel.append(div({className:"card",style:{marginBottom:"16px"}},[hdr2,badges,rows]));
   }).catch(()=>{ absPanel.innerHTML=""; });
 
   // iframeでPDF埋め込み
@@ -1993,7 +2024,9 @@ function renderTStudents(root){
             el("td",{},[badge("b-g",`${ans}/${S.items.length}`)]),
             el("td",{},[
               (()=>{
-                const abs=(S.absences||[]).filter(a=>a.name===s.name);
+                const normName=(n)=>n.replace(/\s+/g,"").replace(/　/g,"");
+                const abs=(S.absences||[]).filter(a=>normName(a.name)===normName(s.name));
+                if(abs.length) console.log(`${s.name}: 欠席${abs.filter(a=>a.type==="欠席").length} 遅刻${abs.filter(a=>a.type==="遅刻").length} 早退${abs.filter(a=>a.type==="早退").length}`);
                 const absent=abs.filter(a=>a.type==="欠席").length;
                 const late  =abs.filter(a=>a.type==="遅刻").length;
                 const early =abs.filter(a=>a.type==="早退").length;
@@ -3184,7 +3217,7 @@ async function renderStudent(){
     sTabContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px 0",textAlign:"center"}},[" 読み込み中..."]));
     try{
       if(k==="schedule"){
-        sTabContent.innerHTML=""; renderSchedule(sTabContent);
+        sTabContent.innerHTML=""; renderSchedule(sTabContent,false,student);
       } else if(k==="uniform"){
         [S.items,S.resp]=await Promise.all([DB.getItems(),DB.getResps()]);
         sTabContent.innerHTML=""; renderSUniform(sTabContent,student);
