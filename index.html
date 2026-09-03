@@ -847,7 +847,7 @@ function renderTeacher(){
     ]),
   );
   const content=div({style:{padding:"clamp(12px,4vw,24px)",maxWidth:"1100px",margin:"0 auto",width:"100%"}});
-  const TABS=[["schedule","📅 スケジュール"],["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["manage","🗂 管理"],["settings","⚙️ 設定"]];
+  const TABS=[["schedule","📅 スケジュール"],["items","📋 配布物"],["students","👥 選手"],["overview","📊 集計"],["matches","🏸 試合記録"],["stats","🏆 成績"],["chat","💬 チャット"],["attribute","🔥 属性診断"],["manage","🗂 管理"],["settings","⚙️ 設定"]];
   let curTab="schedule";
   const tabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const tabBtns={};
@@ -887,6 +887,9 @@ function renderTeacher(){
       } else if(k==="matches"){
         [S.matches,S.tournaments,S.students]=await Promise.all([DB.getMatches(),DB.getTournaments(),DB.getStudents()]);
         tabContent.innerHTML=""; renderTMatches(tabContent);
+      } else if(k==="stats"){
+        [S.matches,S.tournaments,S.students]=await Promise.all([DB.getMatches(),DB.getTournaments(),DB.getStudents()]);
+        tabContent.innerHTML=""; renderTStats(tabContent);
       } else if(k==="chat"){
         S.chatRooms=await DB.getChatRooms();
         tabContent.innerHTML=""; renderChat(tabContent,"__teacher__","教員",true);
@@ -3249,7 +3252,7 @@ async function renderStudent(){
     btn({className:"btn",style:{background:"rgba(255,255,255,.15)",color:"#fff",border:"1px solid rgba(255,255,255,.3)",fontSize:"12px",padding:"5px 12px"},onClick:()=>render(renderLogin)},["ログアウト"]),
   ]));
   const content=div({style:{maxWidth:"900px",margin:"0 auto",padding:"clamp(12px,4vw,24px)"}});
-  const STABS=[["schedule","📅 スケジュール"],["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"],["goal","🎯 目標設定"]];
+  const STABS=[["schedule","📅 スケジュール"],["absence","📝 欠席連絡"],["uniform","📋 配布物"],["matches","🏸 試合記録"],["chat","💬 チャット"],["goal","🎯 目標設定"]];
   let sCurTab="schedule";
   const sTabBar=div({className:"tabs",style:{marginBottom:"24px"}});
   const sTabBtns={};
@@ -3261,6 +3264,8 @@ async function renderStudent(){
     try{
       if(k==="schedule"){
         sTabContent.innerHTML=""; renderSchedule(sTabContent,false,student);
+      } else if(k==="absence"){
+        sTabContent.innerHTML=""; renderSAbsenceForm(sTabContent,student);
       } else if(k==="uniform"){
         [S.items,S.resp]=await Promise.all([DB.getItems(),DB.getResps()]);
         sTabContent.innerHTML=""; renderSUniform(sTabContent,student);
@@ -3370,6 +3375,327 @@ function statCard(label,value,color){
     div({style:{fontSize:"22px",fontWeight:900,color,fontFamily:"'Bebas Neue',sans-serif",lineHeight:1}},[String(value)]),
     div({style:{fontSize:"11px",color:"var(--muted)",marginTop:"4px"}},[label]),
   ]);
+}
+
+// ─── 教員：成績タブ ─────────────────────────────────────────────────────────────
+function renderTStats(root){
+  root.innerHTML="";
+  root.append(div({style:{fontSize:"20px",fontWeight:700,marginBottom:"20px"}},["🏆 成績・統計"]));
+
+  const matches=S.matches||[];
+  const students=S.students||[];
+  const tournaments=S.tournaments||[];
+
+  if(!matches.length){
+    root.append(emptyState("🏸","試合記録がまだありません"));
+    return;
+  }
+
+  // サブタブ
+  const STABS2=[["player","👤 選手別"],["tournament","🏆 大会別"],["pair","🤝 ペア別"]];
+  let sCur="player";
+  const sBar=div({className:"tabs",style:{marginBottom:"20px"}});
+  const sBtns={};
+  const sContent=div({});
+  STABS2.forEach(([k,l])=>{
+    const b=btn({className:`tab ${k===sCur?"on":""}`,onClick:()=>{ sCur=k; STABS2.forEach(([tk])=>sBtns[tk].className=`tab ${tk===k?"on":""}`); sContent.innerHTML=""; if(k==="player") buildPlayer(); else if(k==="tournament") buildTournament(); else buildPair(); }},[l]);
+    sBtns[k]=b; sBar.append(b);
+  });
+  root.append(sBar,sContent);
+
+  // ── ① 選手別成績 ──
+  const buildPlayer=()=>{
+    sContent.innerHTML="";
+    // フィルター
+    const grades=[...new Set(students.map(s=>s.grade))].sort();
+    let filterGrade="all", filterGender="all", filterCat="all";
+    const cats=[...new Set(matches.map(m=>m.category).filter(Boolean))];
+
+    const filterBar=div({style:{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}});
+    const gSel=sel({className:"inp",style:{flex:"0 0 100px"}},[opt("all","全学年"), ...grades.map(g=>opt(g,`${g}年`))]);
+    const gdSel=sel({className:"inp",style:{flex:"0 0 100px"}},[opt("all","全員"),opt("male","男子"),opt("female","女子")]);
+    const cSel=sel({className:"inp",style:{flex:"0 0 120px"}},[opt("all","全カテゴリ"), ...cats.map(c=>opt(c,c))]);
+    filterBar.append(gSel,gdSel,cSel);
+
+    const tableWrap=div({});
+    const rebuild=()=>{
+      tableWrap.innerHTML="";
+      const filtered=students.filter(s=>{
+        if(filterGrade!=="all"&&s.grade!==filterGrade) return false;
+        if(filterGender!=="all"&&s.gender!==filterGender) return false;
+        return true;
+      });
+      const rows=filtered.map(s=>{
+        const ms=matches.filter(m=>m.studentId===s.id&&(filterCat==="all"||m.category===filterCat));
+        if(!ms.length) return null;
+        const wins=ms.filter(m=>m.result==="win").length;
+        const losses=ms.filter(m=>m.result==="lose").length;
+        const draws=ms.filter(m=>m.result==="draw").length;
+        const total=ms.length;
+        const rate=total?Math.round(wins/total*100):0;
+        const tr=el("tr");
+        // 勝率バー
+        const barW=`${rate}%`;
+        tr.append(
+          el("td",{style:{fontWeight:600}},[s.name]),
+          el("td",{style:{color:"var(--muted)",fontSize:"12px"}},[`${s.grade}年`]),
+          el("td",{style:{textAlign:"center"}},[String(total)]),
+          el("td",{style:{textAlign:"center",color:"var(--green)",fontWeight:700}},[String(wins)]),
+          el("td",{style:{textAlign:"center",color:"var(--red)"}},[String(losses)]),
+          el("td",{style:{textAlign:"center",color:"var(--muted)"}},[String(draws)]),
+          el("td",{style:{minWidth:"100px"}},[
+            div({style:{display:"flex",alignItems:"center",gap:"6px"}},[
+              div({style:{flex:1,height:"8px",background:"var(--navy-light)",borderRadius:"4px",overflow:"hidden",border:"1px solid var(--border)"}},[
+                div({style:{width:barW,height:"100%",background:rate>=50?"var(--accent2)":"var(--red)",borderRadius:"4px",transition:"width .4s"}}),
+              ]),
+              span({style:{fontSize:"12px",fontWeight:700,color:rate>=50?"var(--accent2)":"var(--red)",minWidth:"36px"}},[`${rate}%`]),
+            ]),
+          ]),
+        );
+        return {tr,rate,total};
+      }).filter(Boolean);
+
+      if(!rows.length){
+        tableWrap.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px",textAlign:"center"}},["該当する試合記録がありません"]));
+        return;
+      }
+      // 勝率降順ソート
+      rows.sort((a,b)=>b.rate-a.rate||b.total-a.total);
+      tableWrap.append(div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[
+          el("th",{},["選手"]),el("th",{},["学年"]),el("th",{},["試合"]),
+          el("th",{},["勝"]),el("th",{},["負"]),el("th",{},["引"]),el("th",{},["勝率"]),
+        ])]),
+        el("tbody",{},rows.map(r=>r.tr)),
+      ])]));
+    };
+    gSel.addEventListener("change",e=>{ filterGrade=e.target.value; rebuild(); });
+    gdSel.addEventListener("change",e=>{ filterGender=e.target.value; rebuild(); });
+    cSel.addEventListener("change",e=>{ filterCat=e.target.value; rebuild(); });
+    rebuild();
+    sContent.append(filterBar,tableWrap);
+  };
+
+  // ── ② 大会別成績 ──
+  const buildTournament=()=>{
+    sContent.innerHTML="";
+    // 登録大会 + 大会名でグルーピング
+    const groups={};
+    matches.forEach(m=>{
+      let key="",label="";
+      if(m.type==="tournament"&&m.tournamentId){
+        const t=tournaments.find(t=>t.id===m.tournamentId);
+        key=`t_${m.tournamentId}`; label=t?t.name:`大会ID:${m.tournamentId}`;
+      } else if(m.type==="tournament"&&m.tournamentName){
+        key=`n_${m.tournamentName}`; label=m.tournamentName;
+      } else if(m.type==="practice"){
+        key="practice"; label="練習試合";
+      } else {
+        key=`other`; label="その他";
+      }
+      if(!groups[key]) groups[key]={label,matches:[],key};
+      groups[key].matches.push(m);
+    });
+
+    Object.values(groups).sort((a,b)=>{
+      const latestA=a.matches.map(m=>m.date).sort().pop()||"";
+      const latestB=b.matches.map(m=>m.date).sort().pop()||"";
+      return latestB.localeCompare(latestA);
+    }).forEach(g=>{
+      const ms=g.matches;
+      const wins=ms.filter(m=>m.result==="win").length;
+      const losses=ms.filter(m=>m.result==="lose").length;
+      const draws=ms.filter(m=>m.result==="draw").length;
+      const players=[...new Set(ms.map(m=>m.studentName))];
+      const dates=[...new Set(ms.map(m=>m.date).filter(Boolean))].sort();
+      const dateRange=dates.length>1?`${fmtDs(dates[0])} 〜 ${fmtDs(dates[dates.length-1])}`:dates[0]?fmtDs(dates[0]):"";
+      const rate=ms.length?Math.round(wins/ms.length*100):0;
+
+      // 明細
+      let open=false;
+      const detailEl=div({style:{display:"none",marginTop:"12px"}});
+      // 選手ごとの集計
+      const byPlayer={};
+      ms.forEach(m=>{
+        if(!byPlayer[m.studentId]) byPlayer[m.studentId]={name:m.studentName,w:0,l:0,d:0};
+        if(m.result==="win") byPlayer[m.studentId].w++;
+        else if(m.result==="lose") byPlayer[m.studentId].l++;
+        else byPlayer[m.studentId].d++;
+      });
+      detailEl.append(div({className:"tw"},[el("table",{},[
+        el("thead",{},[el("tr",{},[el("th",{},["選手"]),el("th",{},["試合"]),el("th",{},["勝"]),el("th",{},["負"]),el("th",{},["勝率"])])]),
+        el("tbody",{},Object.values(byPlayer).sort((a,b)=>b.w-a.w).map(p=>{
+          const t=p.w+p.l+p.d; const r=t?Math.round(p.w/t*100):0;
+          const tr=el("tr");
+          tr.append(el("td",{style:{fontWeight:600}},[p.name]),el("td",{style:{textAlign:"center"}},[String(t)]),el("td",{style:{textAlign:"center",color:"var(--green)",fontWeight:700}},[String(p.w)]),el("td",{style:{textAlign:"center",color:"var(--red)"}},[String(p.l)]),el("td",{},[span({style:{fontWeight:700,color:r>=50?"var(--accent2)":"var(--red)"}},[`${r}%`])]));
+          return tr;
+        })),
+      ])]));
+
+      const arrow=span({style:{color:"var(--muted)",fontSize:"14px",transition:"transform .2s",transform:"rotate(-90deg)"}},["▼"]);
+      const card=div({className:"card",style:{marginBottom:"12px"}});
+      const hdr3=div({style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",cursor:"pointer",gap:"12px"},onClick:()=>{
+        open=!open; detailEl.style.display=open?"block":"none"; arrow.style.transform=open?"":"rotate(-90deg)";
+      }});
+      hdr3.append(
+        div({style:{flex:1}},[
+          div({style:{fontWeight:700,fontSize:"15px",marginBottom:"4px"}},[g.label]),
+          div({style:{fontSize:"12px",color:"var(--muted)"}},[dateRange]),
+          div({style:{display:"flex",gap:"8px",marginTop:"6px",flexWrap:"wrap"}},[
+            badge("b-0",`${ms.length}試合`),
+            badge("b-g",`${wins}勝`),
+            badge("b-r",`${losses}負`),
+            draws?badge("b-0",`${draws}分`):"",
+            span({style:{fontWeight:700,color:rate>=50?"var(--accent2)":"var(--red)",fontSize:"13px"}},[`勝率${rate}%`]),
+          ]),
+          div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"4px"}},[`出場：${players.join("・")}`]),
+        ]),
+        arrow,
+      );
+      card.append(hdr3,detailEl);
+      sContent.append(card);
+    });
+  };
+
+  // ── ③ ペア別成績 ──
+  const buildPair=()=>{
+    sContent.innerHTML="";
+    // ダブルスのペアを集計（opponentNameに「/」区切りでペア名が入ることを想定）
+    // また同じ日・同じ大会・同じ相手の試合をペアとして集計
+    const doubleMatches=matches.filter(m=>m.category==="ダブルス"||m.category==="混合ダブルス"||m.category==="doubles"||m.category==="mixed");
+
+    if(!doubleMatches.length){
+      sContent.append(div({style:{color:"var(--muted)",fontSize:"13px",padding:"20px",textAlign:"center"}},["ダブルスの試合記録がありません"]));
+      return;
+    }
+
+    // 同じ日・大会・相手の試合をグループ化してペアを推定
+    const pairGroups={};
+    const grouped={};
+    doubleMatches.forEach(m=>{
+      const key=`${m.date}_${m.tournamentId||""}_${m.opponentSchool||""}_${m.opponentName||""}`;
+      if(!grouped[key]) grouped[key]=[];
+      grouped[key].push(m);
+    });
+
+    Object.values(grouped).forEach(grp=>{
+      if(grp.length<2){
+        // 1人だけの記録はそのまま
+        const m=grp[0];
+        const pkey=`solo_${m.studentId}`;
+        if(!pairGroups[pkey]) pairGroups[pkey]={names:[m.studentName],matches:[],ids:[m.studentId]};
+        pairGroups[pkey].matches.push(m);
+        return;
+      }
+      // 2人以上いる → ペアとして扱う
+      const names=grp.map(m=>m.studentName).sort();
+      const ids=grp.map(m=>m.studentId).sort();
+      const pkey=ids.join("_");
+      if(!pairGroups[pkey]) pairGroups[pkey]={names,matches:[],ids};
+      grp.forEach(m=>pairGroups[pkey].matches.push(m));
+    });
+
+    // 重複除去（同じ試合を2回カウントしない）
+    Object.values(pairGroups).forEach(pg=>{
+      const seen=new Set();
+      pg.matches=pg.matches.filter(m=>{ const k=`${m.date}_${m.opponentName}`; if(seen.has(k))return false; seen.add(k); return true; });
+    });
+
+    const pairs=Object.values(pairGroups).sort((a,b)=>b.matches.length-a.matches.length);
+
+    sContent.append(div({style:{fontSize:"13px",color:"var(--muted)",marginBottom:"12px"}},["※同じ日・大会・相手の試合から自動推定しています"]));
+
+    pairs.forEach(pg=>{
+      const ms=pg.matches;
+      const wins=ms.filter(m=>m.result==="win").length;
+      const losses=ms.filter(m=>m.result==="lose").length;
+      const draws=ms.filter(m=>m.result==="draw").length;
+      const rate=ms.length?Math.round(wins/ms.length*100):0;
+      const pairName=pg.names.join(" / ");
+
+      let open=false;
+      const detailEl=div({style:{display:"none",marginTop:"10px",display:"flex",flexDirection:"column",gap:"4px"}});
+      ms.sort((a,b)=>b.date.localeCompare(a.date)).forEach(m=>{
+        detailEl.append(div({style:{display:"flex",gap:"8px",alignItems:"center",padding:"6px 8px",borderRadius:"6px",background:"var(--navy-light)",fontSize:"12px"}},[
+          span({style:{color:"var(--muted)",minWidth:"80px"}},[fmtDs(m.date)]),
+          span({style:{fontWeight:600,color:m.result==="win"?"var(--green)":m.result==="lose"?"var(--red)":"var(--muted)"}},[m.result==="win"?"勝":m.result==="lose"?"負":"引"]),
+          span({style:{color:"var(--muted)"}},[`vs ${m.opponentName||m.opponentSchool||"—"}`]),
+        ]));
+      });
+      detailEl.style.display="none";
+
+      const arrow=span({style:{color:"var(--muted)",fontSize:"14px",transition:"transform .2s",transform:"rotate(-90deg)"}},["▼"]);
+      const card=div({className:"card",style:{marginBottom:"10px"}});
+      const hdr4=div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:"12px"},onClick:()=>{
+        open=!open; detailEl.style.display=open?"flex":"none"; arrow.style.transform=open?"":"rotate(-90deg)";
+      }});
+      hdr4.append(
+        div({style:{flex:1}},[
+          div({style:{fontWeight:700,fontSize:"14px",marginBottom:"6px"}},[pairName]),
+          div({style:{display:"flex",gap:"6px",flexWrap:"wrap"}},[
+            badge("b-0",`${ms.length}試合`),
+            badge("b-g",`${wins}勝`),
+            badge("b-r",`${losses}負`),
+            draws?badge("b-0",`${draws}分`):"",
+            span({style:{fontWeight:700,color:rate>=50?"var(--accent2)":"var(--red)",fontSize:"13px"}},[`勝率${rate}%`]),
+          ]),
+        ]),
+        arrow,
+      );
+      card.append(hdr4,detailEl);
+      sContent.append(card);
+    });
+  };
+
+  buildPlayer();
+}
+
+// ── 選手：欠席連絡フォーム ────────────────────────────────────────────────────
+function renderSAbsenceForm(root, student){
+  root.innerHTML="";
+  const FORM_URL="https://docs.google.com/forms/d/e/1FAIpQLSfrheNhX2aLXQ9kuTfB7N-brSrof89O59a9kBWV3874PSW9Mg/viewform";
+
+  root.append(
+    div({style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"10px"}},[
+      div({},[
+        div({style:{fontSize:"20px",fontWeight:700}},["📝 欠席連絡"]),
+        div({style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},["欠席・遅刻・早退の連絡はこちらから"]),
+      ]),
+      btn({className:"btn btn-g",onClick:()=>window.open(FORM_URL,"_blank")},["🔗 別タブで開く"]),
+    ]),
+  );
+
+  // iframe埋め込み
+  const iframeWrap=div({style:{
+    width:"100%",borderRadius:"12px",overflow:"hidden",
+    border:"1.5px solid var(--border)",boxShadow:"var(--sh)",
+    background:"var(--navy-light)",
+  }});
+
+  const loadingEl=div({style:{padding:"40px",textAlign:"center",color:"var(--muted)",fontSize:"13px"}});
+  loadingEl.innerHTML=`<div style="margin-bottom:12px">📝 フォームを読み込み中...</div><div class="sp" style="margin:0 auto;border-top-color:var(--accent2)"></div>`;
+
+  const frame=el("iframe",{
+    src:FORM_URL,
+    style:{width:"100%",height:"80vh",border:"none",display:"block"},
+    allow:"fullscreen",
+  });
+  frame.addEventListener("load",()=>{ loadingEl.style.display="none"; });
+
+  // 8秒でフォールバック
+  setTimeout(()=>{
+    if(loadingEl.style.display==="none") return;
+    loadingEl.innerHTML="";
+    loadingEl.append(
+      div({style:{fontSize:"16px",marginBottom:"8px"}},["📝"]),
+      div({style:{fontWeight:600,marginBottom:"6px"}},["フォームを読み込めませんでした"]),
+      div({style:{fontSize:"12px",color:"var(--muted)",marginBottom:"16px"}},["下のボタンからブラウザで開いてください"]),
+      btn({className:"btn btn-p",style:{justifyContent:"center"},onClick:()=>window.open(FORM_URL,"_blank")},["欠席連絡フォームを開く"]),
+    );
+  },8000);
+
+  iframeWrap.append(loadingEl,frame);
+  root.append(iframeWrap);
 }
 
 function renderSMatches(root,student){
